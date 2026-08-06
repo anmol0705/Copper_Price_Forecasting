@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+data/*.npy
+data/*.csv
+data/cache/
+results/predictions/
+results/interpretability/
+results/figures/*.png
+*.egg-info/
+.ipynb_checkpoints/

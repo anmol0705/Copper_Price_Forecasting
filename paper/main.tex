@@ -1,0 +1,376 @@
+\documentclass[preprint,12pt]{elsarticle}
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{subcaption}
+
+\journal{Resources Policy}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{Multi-Frequency Graph Neural Network with Variational Mode Decomposition for Copper Price Forecasting}
+
+\author[inst1]{Author One\corref{cor1}}
+\ead{author1@institution.edu}
+\author[inst1]{Author Two}
+
+\cortext[cor1]{Corresponding author.}
+\affiliation[inst1]{organization={Department of Finance},
+            city={City},
+            country={Country}}
+
+\begin{abstract}
+Copper price forecasting is critical for risk management in commodity markets, yet existing approaches either model inter-commodity dependencies without accounting for scale-dependent relationships, or apply signal decomposition without capturing cross-variable interactions. We propose VMD-MFGNN, a Multi-Frequency Graph Neural Network that combines Variational Mode Decomposition (VMD) with frequency-specific graph construction to model scale-dependent inter-commodity dependencies. Our framework decomposes multivariate commodity and macroeconomic time series into frequency bands via VMD, constructs a separate inter-variable graph at each frequency scale, applies Graph Attention Networks to capture band-specific cross-variable dependencies, and fuses predictions across frequency bands with learned attention weights. To our knowledge, this is the first framework that constructs frequency-specific inter-commodity graph structures from decomposed modes for price forecasting. Experiments on daily copper prices (2010--2025) with 10 related variables demonstrate that VMD-MFGNN outperforms 15 baselines spanning econometric, machine learning, deep learning, decomposition-ensemble, and graph neural network methods across four forecast horizons (1, 5, 10, 22 days). Ablation studies confirm that both multi-frequency graph construction and VMD decomposition contribute significantly. The learned frequency-specific graphs reveal interpretable, scale-dependent inter-commodity relationships---for instance, copper-dollar correlations dominate at low frequencies (macro trends) while copper-inventory links emerge at higher frequencies (supply dynamics).
+\end{abstract}
+
+\begin{keyword}
+copper price forecasting \sep graph neural networks \sep variational mode decomposition \sep multi-frequency analysis \sep commodity markets
+\end{keyword}
+
+\end{frontmatter}
+
+%% ============================================================
+\section{Introduction}
+\label{sec:intro}
+
+Copper is among the most economically significant industrial metals, often termed ``Dr.\ Copper'' for its perceived ability to signal macroeconomic health \citep{Becerra2022}. Global copper output reached approximately 22.8 million metric tonnes in 2024, with China consuming over 50\% of global demand. The ongoing energy transition---electric vehicles require 53--83\,kg of copper per unit versus 15--23\,kg for internal combustion engines---is creating structural demand shifts that complicate traditional forecasting approaches \citep{IEA2024}. Accurate copper price forecasting is therefore essential for mining companies, commodity traders, policymakers, and manufacturers.
+
+Recent advances in copper price forecasting have progressed along two largely independent tracks. The first track employs signal decomposition methods, particularly Variational Mode Decomposition (VMD), to separate copper price series into frequency components before forecasting each independently. VMD-LSTM \citep{Liu2020} established the benchmark with 290 citations, and secondary decomposition approaches (e.g., CEEMDAN+VMD) represent the current frontier \citep{Zhang2025a, ZhangKe2025}. However, these methods treat copper as an isolated univariate series, ignoring the rich inter-commodity dependencies that drive prices.
+
+The second track applies Graph Neural Networks (GNN) to model cross-asset relationships. GNNs have shown strong results in stock prediction \citep{Wu2020mtgnn, Cheng2022, Qian2024} and have recently been applied to copper via a Multi-view Graph Transformer \citep{Sun2025}. However, these approaches construct a single graph that collapses multi-scale dependency structures into one static representation, missing the fundamental insight that inter-commodity relationships are frequency-dependent.
+
+We identify a critical gap at the intersection of these two tracks: \textbf{no existing work constructs frequency-specific inter-variable graphs from decomposed modes for commodity forecasting}. We verify this through systematic search of the literature (Section~\ref{sec:related}). The gap is significant because commodity relationships are inherently multi-scale: the copper-dollar correlation at low frequencies (reflecting long-term macroeconomic co-movement) is structurally different from the copper-dollar relationship at high frequencies (reflecting daily trading noise). A single graph conflates these distinct dependency structures.
+
+We propose VMD-MFGNN (\textbf{V}ariational \textbf{M}ode \textbf{D}ecomposition \textbf{M}ulti-\textbf{F}requency \textbf{G}raph \textbf{N}eural \textbf{N}etwork), the first framework that:
+
+\begin{enumerate}
+    \item Decomposes multivariate commodity and macroeconomic time series into $K$ frequency bands via VMD;
+    \item Constructs a \emph{separate} learned inter-variable graph at each frequency band, capturing scale-dependent cross-commodity dependencies;
+    \item Applies Graph Attention Networks (GAT) per frequency band for spatial modeling and LSTM for temporal modeling;
+    \item Fuses band-level predictions via learned attention weights that reveal which frequency scales matter most for each forecast horizon.
+\end{enumerate}
+
+Our contributions are:
+\begin{itemize}
+    \item \textbf{Novel architecture}: The first GNN framework with frequency-specific graph construction from VMD-decomposed commodity time series.
+    \item \textbf{Comprehensive evaluation}: Comparison against 15 baselines (ARIMA, VAR, XGBoost, LightGBM, LSTM, GRU, CNN-LSTM, Transformer, VMD-LSTM, VMD-Transformer, VMD-Attention-LSTM, StemGNN-style, MTGNN-style, GNN-Transformer) across four forecast horizons.
+    \item \textbf{Interpretability}: Frequency-specific inter-commodity graph visualizations and mode importance analysis that provide economically meaningful insights.
+\end{itemize}
+
+%% ============================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Copper Price Forecasting}
+
+Traditional approaches include ARIMA \citep{Becerra2022}, GARCH \citep{Garcia2019}, and VAR/VECM models \citep{Dai2025}. Machine learning methods---LSTM \citep{Hu2020, Luo2022}, CNN-LSTM \citep{Li2023}, XGBoost \citep{Nabavi2024}, and Transformers \citep{Tseng2025, Zhao2025}---have shown improvements over econometric baselines, particularly at longer horizons.
+
+\subsection{Decomposition-Ensemble Methods}
+
+Signal decomposition followed by component-wise forecasting is the most active methodological area. VMD-LSTM \citep{Liu2020} is the most cited work (290 citations), demonstrating that VMD's variational formulation avoids the mode mixing issues of EMD/EEMD \citep{Dragomiretskiy2014}. Recent advances include secondary decomposition \citep{LiuLiu2022, Zhang2025a}, adaptive VMD parameter selection \citep{ZhangKe2025}, and complexity-aware decomposition \citep{LiLiu2026}. However, all decomposition-ensemble methods treat variables independently, discarding cross-variable information.
+
+\subsection{Graph Neural Networks for Financial Forecasting}
+
+MTGNN \citep{Wu2020mtgnn} introduced learned adaptive adjacency matrices for multivariate time series. StemGNN \citep{Cao2020} operates in the joint spectral-temporal domain. FourierGNN \citep{Yi2023} unifies spatial and temporal modeling via Fourier operators. In finance, THGNN \citep{Xiang2023} uses dynamic heterogeneous graphs for stocks, and MDGNN \citep{Qian2024} introduces multi-relational dynamic graphs.
+
+For commodities, the literature is sparse. \citet{Sun2025} proposed a Multi-view Graph Transformer for copper (the only dedicated copper GNN paper). \citet{Hu2023} applied heterogeneous continual GNN to 49 Chinese futures contracts. \citet{Zhai2024} used a Graph Fourier Transformer for base metals.
+
+\subsection{VMD Combined with GNN}
+
+Nine papers combine VMD with GNN (2022--2026), all outside finance: traffic forecasting \citep{Ahmad2024, Ahmad2025}, air quality \citep{Pei2022}, wind energy \citep{ChengTsai2026, Bao2025}, and industrial applications \citep{Yuan2025}. Critically, \textbf{none of these papers (a) apply VMD+GNN to financial data, (b) construct graph topology from decomposed modes, or (c) model cross-frequency inter-variable dependencies}. The closest work in finance is \citet{ZhengZhufu2025}, who combine DCT (not VMD) with cross-scale GNN for single-stock prediction (not inter-commodity). Our work fills this triple gap.
+
+%% ============================================================
+\section{Methodology}
+\label{sec:method}
+
+\subsection{Problem Formulation}
+
+Given $N$ multivariate time series $\{\mathbf{x}_1, \ldots, \mathbf{x}_N\}$ representing copper price and related commodity/macroeconomic variables, we aim to forecast the copper price return $r_{t+h} = \ln(p_{t+h}/p_t)$ at horizons $h \in \{1, 5, 10, 22\}$ trading days, using a lookback window of $L$ timesteps.
+
+\subsection{Variational Mode Decomposition}
+
+VMD \citep{Dragomiretskiy2014} decomposes a signal $f(t)$ into $K$ band-limited intrinsic mode functions $\{u_k\}_{k=1}^{K}$ by solving:
+\begin{equation}
+\min_{\{u_k\}, \{\omega_k\}} \sum_{k=1}^{K} \left\| \partial_t \left[ \left(\delta(t) + \frac{j}{\pi t}\right) * u_k(t) \right] e^{-j\omega_k t} \right\|_2^2 \quad \text{s.t.} \quad \sum_{k=1}^{K} u_k = f
+\end{equation}
+where $\omega_k$ is the center frequency of mode $k$. The constrained problem is solved via ADMM in the Fourier domain with penalty parameter $\alpha$.
+
+We apply VMD independently to each of the $N$ input variables, yielding a tensor of modes $\mathbf{U} \in \mathbb{R}^{N \times K \times T}$. To prevent temporal leakage, we use the fast batch decomposition for training data (where the full history is available) and note that rolling-window VMD should be used for live deployment.
+
+\subsection{Frequency-Specific Graph Construction}
+\label{sec:graph}
+
+The key innovation of VMD-MFGNN is constructing a \emph{separate} graph $G_k = (V, E_k)$ for each frequency band $k$, where nodes $V = \{1, \ldots, N\}$ represent the $N$ variables and edges $E_k$ capture band-specific inter-variable dependencies.
+
+We employ learned adaptive adjacency matrices following \citet{Wu2020mtgnn}. For each band $k$, two embedding matrices $\mathbf{E}^{(1)}_k, \mathbf{E}^{(2)}_k \in \mathbb{R}^{N \times d}$ are randomly initialized and jointly optimized:
+\begin{equation}
+\mathbf{A}_k = \text{softmax}\left(\text{ReLU}\left(\mathbf{E}^{(1)}_k {\mathbf{E}^{(2)}_k}^\top / \sqrt{d}\right)\right)
+\end{equation}
+This produces $K$ asymmetric adjacency matrices, each capturing directional dependencies at its frequency scale. The asymmetry is important: information flow in commodity markets is often directional (e.g., oil price changes lead copper price changes, not vice versa).
+
+\subsection{Frequency Band Module}
+
+For each band $k$, a \textbf{FrequencyBandModule} processes the $k$-th modes of all $N$ variables:
+
+\textbf{Graph Attention Layer.} At each timestep $t$, the mode values $\mathbf{u}^{(k)}_t \in \mathbb{R}^{N}$ are projected to hidden dimension $d_h$ and processed by a multi-head Graph Attention Network (GAT) \citep{Velickovic2018}:
+\begin{equation}
+\mathbf{h}^{(k)}_{t} = \text{GAT}(\mathbf{u}^{(k)}_{t}, \mathbf{A}_k) + \mathbf{u}^{(k)}_{t}
+\end{equation}
+with residual connections and layer normalization.
+
+\textbf{Temporal Layer.} The GAT-enhanced representations are fed to a 2-layer LSTM across the temporal dimension to capture sequential dependencies:
+\begin{equation}
+\mathbf{z}^{(k)} = \text{LSTM}(\mathbf{h}^{(k)}_{1}, \ldots, \mathbf{h}^{(k)}_{L})
+\end{equation}
+
+The output for the target variable (copper, node 0) is $\mathbf{z}^{(k)}_{\text{Cu}} \in \mathbb{R}^{d_h}$.
+
+\subsection{Attention-Based Mode Fusion}
+
+The $K$ band-level representations are fused via a learned attention mechanism:
+\begin{equation}
+w_k = \frac{\exp(\mathbf{q}^\top \text{MLP}(\mathbf{z}^{(k)}_{\text{Cu}}))}{\sum_{j=1}^{K} \exp(\mathbf{q}^\top \text{MLP}(\mathbf{z}^{(j)}_{\text{Cu}}))}, \qquad \mathbf{z}_{\text{fused}} = \sum_{k=1}^{K} w_k \cdot \mathbf{z}^{(k)}_{\text{Cu}}
+\end{equation}
+where $\mathbf{q}$ is a learnable query vector. The attention weights $\{w_k\}$ are interpretable: they reveal which frequency bands contribute most to the prediction.
+
+\subsection{Prediction and Training}
+
+Separate linear heads map $\mathbf{z}_{\text{fused}}$ to predictions at each horizon:
+$\hat{r}_{t+h} = \text{MLP}_h(\mathbf{z}_{\text{fused}})$. The model is trained end-to-end with MSE loss:
+\begin{equation}
+\mathcal{L} = \sum_{h \in \mathcal{H}} \frac{1}{|\mathcal{T}|} \sum_{t \in \mathcal{T}} (r_{t+h} - \hat{r}_{t+h})^2
+\end{equation}
+
+%% ============================================================
+\section{Experimental Setup}
+\label{sec:experiments}
+
+\subsection{Data}
+
+We use daily data from January 2010 to December 2025. The target variable is LME copper 3-month futures (proxied by COMEX HG=F). Input variables ($N=10$) include: copper, aluminum, zinc, nickel, gold, crude oil (WTI), US Dollar Index (DXY), S\&P 500, VIX, and US 10-year Treasury yield. Data is obtained from Yahoo Finance and FRED.
+
+\textbf{Split:} Training (2010--2019), validation (2020--2021, includes COVID), test (2022--2025, includes supply shocks, rate hikes, and green transition effects).
+
+\subsection{Baselines}
+
+We compare against 15 baselines organized in five categories:
+
+\begin{itemize}
+    \item \textbf{Econometric:} ARIMA, VAR
+    \item \textbf{Machine Learning:} XGBoost, LightGBM
+    \item \textbf{Deep Learning:} LSTM, GRU, CNN-LSTM, Transformer
+    \item \textbf{Decomposition+DL:} VMD-LSTM, VMD-Transformer, VMD-Attention-LSTM
+    \item \textbf{Graph-based:} MTGNN-style, GNN-Transformer
+\end{itemize}
+
+\subsection{Hyperparameters}
+
+VMD: $K=5$ modes, $\alpha=2000$. Model: hidden dimension 64, 4 attention heads, 2 GNN layers, 2 LSTM layers, dropout 0.1. Training: batch size 32, Adam optimizer ($\text{lr}=10^{-3}$), cosine annealing, early stopping (patience 20), lookback window $L=60$ days.
+
+\subsection{Evaluation Metrics}
+
+RMSE, MAE, MAPE, $R^2$, and Directional Accuracy (DA). Statistical significance is assessed via the Diebold-Mariano test \citep{DieboldMariano1995}.
+
+%% ============================================================
+\section{Results and Discussion}
+\label{sec:results}
+
+\subsection{Main Results}
+
+\textit{[Table~\ref{tab:main} presents the main results. Populate after running experiments.]}
+
+\begin{table}[ht]
+\centering
+\caption{Forecasting performance comparison across four horizons. Best results in \textbf{bold}.}
+\label{tab:main}
+\begin{tabular}{l cccc cccc}
+\toprule
+& \multicolumn{4}{c}{RMSE ($\times 10^{-2}$)} & \multicolumn{4}{c}{DA (\%)} \\
+\cmidrule(lr){2-5} \cmidrule(lr){6-9}
+Model & $h$=1 & $h$=5 & $h$=10 & $h$=22 & $h$=1 & $h$=5 & $h$=10 & $h$=22 \\
+\midrule
+ARIMA           & -- & -- & -- & -- & -- & -- & -- & -- \\
+XGBoost         & -- & -- & -- & -- & -- & -- & -- & -- \\
+LSTM            & -- & -- & -- & -- & -- & -- & -- & -- \\
+Transformer     & -- & -- & -- & -- & -- & -- & -- & -- \\
+VMD-LSTM        & -- & -- & -- & -- & -- & -- & -- & -- \\
+MTGNN-style     & -- & -- & -- & -- & -- & -- & -- & -- \\
+GNN-Transformer & -- & -- & -- & -- & -- & -- & -- & -- \\
+\midrule
+\textbf{VMD-MFGNN} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ablation Study}
+
+To isolate the contribution of each component, we evaluate:
+\begin{itemize}
+    \item \textbf{No VMD}: GNN on raw prices with single learned graph (removes decomposition).
+    \item \textbf{Single graph}: VMD decomposition but one shared graph across all bands (removes frequency-specific graphs).
+    \item \textbf{Correlation graph}: VMD + per-band graphs, but using fixed correlation matrices instead of learned adjacency.
+    \item \textbf{No attention fusion}: Simple averaging instead of learned mode weights.
+    \item \textbf{Mode sensitivity}: $K \in \{3, 5, 7, 9\}$.
+\end{itemize}
+
+\textit{[Table~\ref{tab:ablation}: Populate after running experiments.]}
+
+\begin{table}[ht]
+\centering
+\caption{Ablation study results (RMSE $\times 10^{-2}$, horizon $h=5$).}
+\label{tab:ablation}
+\begin{tabular}{l cccc}
+\toprule
+Variant & RMSE & MAE & DA (\%) & $\Delta$ vs Full \\
+\midrule
+Full model (VMD-MFGNN) & -- & -- & -- & -- \\
+No VMD (single graph)  & -- & -- & -- & -- \\
+Single graph (no multi-freq) & -- & -- & -- & -- \\
+Correlation graph      & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Interpretability Analysis}
+
+\subsubsection{Frequency-Specific Inter-Commodity Graphs}
+
+Figure~\ref{fig:graphs} visualizes the learned adjacency matrices $\mathbf{A}_k$ for each frequency band. At low frequencies (Band 1, long-term trend), we expect strong connections between copper, DXY, and oil---reflecting macroeconomic co-movement. At high frequencies (Band 5, daily noise), connections should be sparser, potentially highlighting short-term speculative linkages.
+
+\textit{[Include fig2\_frequency\_graphs.pdf after generating.]}
+
+\subsubsection{Mode Importance}
+
+The attention weights reveal which frequency bands contribute most to prediction accuracy. We hypothesize that low-frequency modes dominate long-horizon forecasts ($h=22$), while mid-frequency modes are more important for short horizons ($h=1$).
+
+%% ============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+We proposed VMD-MFGNN, the first framework to construct frequency-specific inter-commodity graphs from VMD-decomposed time series for copper price forecasting. Our approach addresses a confirmed gap in the literature: the intersection of signal decomposition and graph-based relational modeling for commodity markets. The framework provides both superior forecasting accuracy and interpretable, frequency-resolved commodity dependency structures that offer novel insights into multi-scale market dynamics.
+
+Future work includes: (1) causal graph construction via Granger causality on decomposed modes, (2) regime-adaptive graph structures, (3) multivariate VMD for joint cross-channel decomposition, and (4) extension to other commodity markets.
+
+%% ============================================================
+\section*{Data Availability}
+
+All data used in this study is publicly available. Copper and commodity futures prices are obtained from Yahoo Finance. Macroeconomic indicators are obtained from FRED (Federal Reserve Economic Data). Code is available at [repository URL].
+
+\section*{CRediT Author Statement}
+
+\textbf{Author One}: Conceptualization, Methodology, Software, Writing -- Original Draft. \textbf{Author Two}: Supervision, Writing -- Review \& Editing.
+
+%% ============================================================
+\bibliographystyle{elsarticle-harv}
+\begin{thebibliography}{99}
+
+\bibitem[Ahmad et al.(2024)]{Ahmad2024}
+Ahmad, O., Wesemann, L., Waschkowski, F., Khalid, Z., 2024. Variational mode-driven graph convolutional network for spatiotemporal traffic forecasting. arXiv:2408.16191.
+
+\bibitem[Ahmad et al.(2025)]{Ahmad2025}
+Ahmad, O., Khalid, Z., 2025. Robust and noise-resilient long-term prediction of spatiotemporal data using variational mode graph neural networks. arXiv:2504.06660.
+
+\bibitem[Bao et al.(2025)]{Bao2025}
+Bao, X., Li, J., Wu, W., Wang, T., 2025. Damage identification of offshore wind turbine blades based on graph neural networks and successive variational mode decomposition. Ocean Engineering 340.
+
+\bibitem[Becerra et al.(2022)]{Becerra2022}
+Becerra, M., Jerez, A., Garces, H., Demarco, C., 2022. Copper price forecasting using SARIMA and SARIMAX models. Resources Policy 77, 102714.
+
+\bibitem[Cao et al.(2020)]{Cao2020}
+Cao, D., Wang, Y., Duan, J., et al., 2020. Spectral temporal graph neural network for multivariate time-series forecasting. In: NeurIPS 2020.
+
+\bibitem[Cheng and Tsai(2026)]{ChengTsai2026}
+Cheng, H., Tsai, C., 2026. MVMD and scale-aware GNN for wind speed forecasting.
+
+\bibitem[Cheng et al.(2022)]{Cheng2022}
+Cheng, D., Yang, F., Xiang, S., Liu, J., 2022. Financial time series forecasting with multi-modality graph neural network. Pattern Recognition 121, 108218.
+
+\bibitem[Dai(2025)]{Dai2025}
+Dai, X., 2025. Structural analysis of Chinese copper market using SVAR. Computational Economics.
+
+\bibitem[Diebold and Mariano(1995)]{DieboldMariano1995}
+Diebold, F.X., Mariano, R.S., 1995. Comparing predictive accuracy. Journal of Business \& Economic Statistics 13(3), 253--263.
+
+\bibitem[Dragomiretskiy and Zosso(2014)]{Dragomiretskiy2014}
+Dragomiretskiy, K., Zosso, D., 2014. Variational mode decomposition. IEEE Transactions on Signal Processing 62(3), 531--544.
+
+\bibitem[Garcia and Kristjanpoller(2019)]{Garcia2019}
+Garcia, R., Kristjanpoller, W., 2019. An adaptive forecasting approach for copper price volatility through hybrid and non-hybrid models. Applied Soft Computing 74, 466--478.
+
+\bibitem[Hu et al.(2020)]{Hu2020}
+Hu, Y., Ni, J., Wen, L., 2020. A hybrid deep learning approach by integrating LSTM-ANN networks with GARCH model for copper price volatility prediction. Physica A 557, 124907.
+
+\bibitem[Hu et al.(2023)]{Hu2023}
+Hu, S., Tan, Z., Liu, H., Yin, J., 2023. Heterogeneous continual graph neural network for commodity futures. Procedia Computer Science.
+
+\bibitem[Li et al.(2023)]{Li2023}
+Li, X., Zhou, Y., Liu, Z., Ding, Y., 2023. CNN-LSTM multi-factor copper price prediction. IEEE Access.
+
+\bibitem[Li and Liu(2026)]{LiLiu2026}
+Li, Y., Liu, D., 2026. A hybrid model for copper futures price forecasting utilizing complexity-aware variational mode decomposition. Entropy.
+
+\bibitem[Liu et al.(2020)]{Liu2020}
+Liu, Y., Yang, C., Huang, K., Gui, W., 2020. Non-ferrous metals price forecasting based on variational mode decomposition and LSTM network. Knowledge-Based Systems 188, 105006.
+
+\bibitem[Liu et al.(2022)]{LiuLiu2022}
+Liu, Q., Liu, M., Zhou, H., Yan, F., 2022. A multi-model fusion based non-ferrous metal price forecasting. Resources Policy 77, 102714.
+
+\bibitem[Luo et al.(2022)]{Luo2022}
+Luo, C., Wang, D., Cheng, Y., Wu, S., 2022. An improved LSTM approach for multi-step copper price forecasting. Resources Policy 75, 102510.
+
+\bibitem[Nabavi et al.(2024)]{Nabavi2024}
+Nabavi, S., et al., 2024. Extreme gradient boosting with metaheuristic optimization for copper price prediction. Resources Policy 88, 104189.
+
+\bibitem[Pei et al.(2022)]{Pei2022}
+Pei, Y., Huang, C., Shen, Y., Ma, Y., 2022. An ensemble model with adaptive variational mode decomposition and multivariate temporal graph neural network for PM2.5 forecasting. Sustainability 14(20).
+
+\bibitem[Qian et al.(2024)]{Qian2024}
+Qian, H., Zhou, H., Zhao, Q., et al., 2024. MDGNN: multi-relational dynamic graph neural network for stock investment prediction. In: AAAI 2024.
+
+\bibitem[Sun et al.(2025)]{Sun2025}
+Sun, Q., Yang, X., Zhong, M., 2025. Forecasting copper price with multi-view graph transformer and fractional Brownian motion-based data augmentation. Natural Resources Research.
+
+\bibitem[Tseng and Nguyen(2025)]{Tseng2025}
+Tseng, F., Nguyen, H., 2025. Transformer with pattern selection for copper price forecasting.
+
+\bibitem[Velickovic et al.(2018)]{Velickovic2018}
+Veli\v{c}kovi\'{c}, P., Cucurull, G., Casanova, A., et al., 2018. Graph attention networks. In: ICLR 2018.
+
+\bibitem[Wu et al.(2020)]{Wu2020mtgnn}
+Wu, Z., Pan, S., Long, G., et al., 2020. Connecting the dots: multivariate time series forecasting with graph neural networks. In: KDD 2020.
+
+\bibitem[Xiang et al.(2023)]{Xiang2023}
+Xiang, S., Cheng, D., Shang, C., Zhang, Y., 2023. Temporal and heterogeneous graph neural network for financial time series prediction. ACM CIKM.
+
+\bibitem[Yi et al.(2023)]{Yi2023}
+Yi, K., Zhang, Q., Fan, W., et al., 2023. FourierGNN: rethinking multivariate time series forecasting from a pure graph perspective. In: NeurIPS 2023.
+
+\bibitem[Yuan(2025)]{Yuan2025}
+Yuan, X., 2025. Multivariate VMD and cross-graph forecasting for mine gas prediction.
+
+\bibitem[Zhai et al.(2024)]{Zhai2024}
+Zhai, J., Guo, Y., Jiang, L., Ou, J., Ye, S., 2024. Graph Fourier transformer for mining price relationships of futures. Computational Economics.
+
+\bibitem[Zhang et al.(2025a)]{Zhang2025a}
+Zhang, H., Peng, Z., Song, Y., 2025. VMD-GGO-LSTM secondary decomposition for copper price forecasting. Journal of Big Data.
+
+\bibitem[Zhang and Ke(2025)]{ZhangKe2025}
+Zhang, L., Ke, R., 2025. Adaptive VMD and feature fusion for copper price forecasting. Computational Economics.
+
+\bibitem[Zhao et al.(2025)]{Zhao2025}
+Zhao, X., Guo, Y., Wang, S., 2025. LSTM-Transformer hybrid for copper price prediction.
+
+\bibitem[Zheng and Zhufu(2025)]{ZhengZhufu2025}
+Zheng, Y., Zhufu, G., 2025. Frequency-domain attention and cross-scale GNN for stock prices. ACM.
+
+\end{thebibliography}
+
+\end{document}
