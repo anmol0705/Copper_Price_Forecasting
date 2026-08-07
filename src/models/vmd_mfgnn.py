@@ -12,16 +12,37 @@ class FrequencyGraphConstructor(nn.Module):
     """Constructs per-frequency-band adjacency matrices."""
 
     def __init__(self, num_vars: int, embed_dim: int = 16,
-                 graph_type: str = "learned"):
+                 graph_type: str = "learned", topk: Optional[int] = None):
         super().__init__()
         self.num_vars = num_vars
         self.graph_type = graph_type
+        # For num_vars=10 (locked protocol), keep each node's top-5 outgoing
+        # edges (~half connectivity) so the learned graph is a meaningfully
+        # sparse structure instead of the fully-connected softmax output.
+        self.topk = topk if topk is not None else max(1, num_vars // 2)
 
         if graph_type == "learned":
             self.emb1 = nn.Embedding(num_vars, embed_dim)
             self.emb2 = nn.Embedding(num_vars, embed_dim)
             nn.init.xavier_uniform_(self.emb1.weight)
             nn.init.xavier_uniform_(self.emb2.weight)
+
+    def _topk_sparsify(self, adj: torch.Tensor) -> torch.Tensor:
+        """Zero out all but each row's top-k highest-weight entries.
+
+        Applied to the dense adjacency BEFORE dense_to_sparse so that only
+        the surviving (top-k) entries appear in the sparse edge list —
+        entries zeroed here never reach dense_to_sparse (which drops exact
+        zeros), so gradients only flow through the kept edges. This keeps
+        the fix differentiable-compatible since masking is just element-wise
+        zeroing of the dense tensor, not an in-place/non-differentiable op
+        on the surviving values.
+        """
+        k = min(self.topk, adj.size(-1))
+        topk_vals, topk_idx = torch.topk(adj, k, dim=-1)
+        mask = torch.zeros_like(adj)
+        mask.scatter_(-1, topk_idx, 1.0)
+        return adj * mask
 
     def forward(self, precomputed_adj: Optional[torch.Tensor] = None
                 ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -33,16 +54,50 @@ class FrequencyGraphConstructor(nn.Module):
             e1 = self.emb1(idx)  # (N, d)
             e2 = self.emb2(idx)  # (N, d)
             adj = torch.softmax(F.relu(e1 @ e2.T), dim=-1)  # (N, N)
+            # Scope sparsification to the learned-graph path only — the
+            # correlation-graph path is already sparse via its own
+            # thresholding in compute_correlation_adjacency().
+            adj = self._topk_sparsify(adj)
 
         edge_index, edge_weight = dense_to_sparse(adj)
         return edge_index, edge_weight
 
     def get_adjacency(self) -> torch.Tensor:
+        """Returns the top-k sparsified adjacency actually used in forward()."""
         with torch.no_grad():
             idx = torch.arange(self.num_vars, device=self.emb1.weight.device)
             e1 = self.emb1(idx)
             e2 = self.emb2(idx)
-            return torch.softmax(F.relu(e1 @ e2.T), dim=-1)
+            adj = torch.softmax(F.relu(e1 @ e2.T), dim=-1)
+            return self._topk_sparsify(adj)
+
+    @staticmethod
+    def compute_correlation_adjacency(band_signal: torch.Tensor,
+                                       threshold: float = 0.3) -> torch.Tensor:
+        """Build a correlation-graph adjacency matrix for one frequency band.
+
+        band_signal: (T, num_vars) — a single band's mode signal for every
+            variable over a training window (rolling/expanding window slice).
+        threshold: edges are kept only where |Pearson r| > threshold; all
+            other entries are zeroed out. 0.3 is used as a conventional
+            "weak-to-moderate correlation" cutoff for financial time series
+            graphs (consistent with the correlation-graph ablation in the
+            locked protocol) so the resulting graph is sparse rather than
+            fully connected.
+
+        Returns: (num_vars, num_vars) adjacency matrix of thresholded
+            Pearson correlations (self-loops on the diagonal are kept at 1).
+        """
+        if band_signal.dim() != 2:
+            raise ValueError(
+                f"band_signal must be (T, num_vars), got shape {tuple(band_signal.shape)}"
+            )
+        # torch.corrcoef expects variables as rows, so transpose to (N, T)
+        corr = torch.corrcoef(band_signal.T)  # (N, N)
+        corr = torch.nan_to_num(corr, nan=0.0)
+        mask = corr.abs() > threshold
+        adj = corr * mask
+        return adj
 
 
 class FrequencyBandModule(nn.Module):
@@ -65,7 +120,7 @@ class FrequencyBandModule(nn.Module):
             in_dim = hidden_dim if i == 0 else hidden_dim
             self.gat_layers.append(
                 GATConv(in_dim, hidden_dim // num_heads, heads=num_heads,
-                        dropout=dropout, concat=True)
+                        dropout=dropout, concat=True, edge_dim=1)
             )
             self.gat_norms.append(nn.LayerNorm(hidden_dim))
 
@@ -98,7 +153,8 @@ class FrequencyBandModule(nn.Module):
 
             for gat, norm in zip(self.gat_layers, self.gat_norms):
                 residual = batch_h
-                batch_h = gat(batch_h, batch_edge_index, batch_edge_weight)
+                batch_h = gat(batch_h, batch_edge_index,
+                              edge_attr=batch_edge_weight.unsqueeze(-1))
                 batch_h = norm(batch_h + residual)
                 batch_h = self.dropout(F.elu(batch_h))
 
@@ -131,7 +187,10 @@ class AttentionFusion(nn.Module):
 
     def __init__(self, hidden_dim: int, num_modes: int):
         super().__init__()
-        self.query = nn.Parameter(torch.randn(hidden_dim))
+        # Small init (std=0.02) so attention logits at hidden_dim=64 start
+        # near-uniform across bands instead of saturating on one random
+        # band before any training (logits scale with std * sqrt(hidden_dim)).
+        self.query = nn.Parameter(torch.randn(hidden_dim) * 0.02)
         self.key_proj = nn.Linear(hidden_dim, hidden_dim)
         self.num_modes = num_modes
 

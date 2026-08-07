@@ -411,6 +411,177 @@ class XGBoostBaseline:
         return np.concatenate(xs), np.concatenate(ys)
 
 
+class ARIMABaseline:
+    """ARIMA baseline on the raw copper price channel (feature index 0).
+
+    Design choice (a) from the task brief, simplified: statsmodels has no
+    notion of "fit on a DataLoader of overlapping lookback windows" the way
+    the DL/GBM baselines do, so ARIMA is adapted as follows:
+
+      * `fit()` runs a small (p, d, q) grid search (AIC-minimizing, statsmodels
+        `ARIMA`, not `pmdarima` -- `pmdarima` is not a repo dependency and this
+        avoids adding a new heavy one) on a subsample of training windows, and
+        keeps the order with the best mean AIC. This happens once.
+      * `predict()` walk-forwards: for every lookback window in the loader it
+        re-fits ARIMA(order) on that window's own price history (this is the
+        standard rolling/expanding ARIMA forecasting protocol -- a single
+        historical fit would go stale over a multi-year test set) and calls
+        `get_forecast(steps=max(horizons))` once per window, reading off every
+        locked horizon (1/5/10/22) from the same forecast path rather than
+        fitting a separate model per horizon.
+      * The loader's price channel is z-score normalized upstream (see
+        `RawPriceDataset`), using the *training* split's per-variable mean/std
+        (index 0 = copper). `predict()` de-normalizes the ARIMA forecast and
+        the window's last observed value back to real price units using those
+        stats (recovered from the loader's underlying dataset -- see
+        `_get_norm_stats`), then computes a proper log-return prediction
+        `log(p_hat / p_last)` to match the pipeline's actual target
+        `y = log(p_{t+h} / p_t)`. (An earlier version of this baseline used
+        `forecast[h-1] - last_val` -- a normalized-price-level *difference* --
+        as an additive proxy for a log-*return* target; those two quantities
+        differ by roughly `price_level / std_train`, which for copper over
+        the 2010-2019 training window is ~5-6x, making ARIMA's errors look
+        catastrophically worse than its actual forecast skill. Fixed here.)
+
+      * Indexing note: the lookback window supplied by `RawPriceDataset` is
+        `values_norm[t - lookback : t]`, i.e. it ends at `t - 1`, not `t`.
+        `get_forecast(steps=...).predicted_mean` is 0-indexed relative to the
+        *last observed point*, so a forecast `k` steps ahead of the window's
+        last value (at `t - 1`) lands on day `(t - 1) + k`. To land exactly on
+        day `t + h` (matching horizon `h` of the `t`-anchored target), we need
+        `k = h + 1`, i.e. `forecast[h]` (0-indexed) from a `steps=max_h + 1`
+        call -- not `forecast[h - 1]` from `steps=max_h`, which lands one day
+        short (on `t + h - 1`). Fixed here as well.
+    """
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.horizons = config.get("horizons", [1, 5, 10, 22])
+        self.order = None  # selected by fit() via AIC grid search
+        self._max_p = config.get("arima_max_p", 3)
+        self._max_d = config.get("arima_max_d", 2)
+        self._max_q = config.get("arima_max_q", 3)
+        self._n_order_samples = config.get("arima_order_search_samples", 20)
+
+    @property
+    def name(self) -> str:
+        return "ARIMA"
+
+    def fit(self, train_loader: DataLoader, val_loader: DataLoader = None):
+        import warnings
+        from statsmodels.tsa.arima.model import ARIMA
+
+        X_train, _ = self._loader_to_series(train_loader)
+        if len(X_train) == 0:
+            self.order = (1, 1, 0)
+            return
+
+        step = max(1, len(X_train) // self._n_order_samples)
+        sample = X_train[::step][: self._n_order_samples]
+
+        best_aic = np.inf
+        best_order = (1, 1, 0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for p in range(self._max_p + 1):
+                for d in range(self._max_d + 1):
+                    for q in range(self._max_q + 1):
+                        if p == 0 and q == 0:
+                            continue
+                        aics = []
+                        for series in sample:
+                            try:
+                                res = ARIMA(series, order=(p, d, q)).fit()
+                                if np.isfinite(res.aic):
+                                    aics.append(res.aic)
+                            except Exception:
+                                continue
+                        if aics:
+                            mean_aic = float(np.mean(aics))
+                            if mean_aic < best_aic:
+                                best_aic = mean_aic
+                                best_order = (p, d, q)
+
+        self.order = best_order
+        logger.info(f"ARIMA selected order {self.order} (mean AIC={best_aic:.4f})")
+
+    def predict(self, loader: DataLoader) -> np.ndarray:
+        import warnings
+        from statsmodels.tsa.arima.model import ARIMA
+
+        if self.order is None:
+            self.order = (1, 1, 0)
+
+        X, _ = self._loader_to_series(loader)
+        mu0, sigma0 = self._get_norm_stats(loader)
+        max_h = max(self.horizons)
+        # steps=max_h+1: forecast[0] is the window's next point (day t, one
+        # past the window's last observed point at t-1); forecast[h] is day
+        # t+h, matching horizon h's target base at t (see class docstring).
+        forecast_steps = max_h + 1
+        preds = np.zeros((len(X), len(self.horizons)))
+        eps = 1e-8
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for i, series in enumerate(X):
+                last_val = series[-1]
+                try:
+                    res = ARIMA(series, order=self.order).fit()
+                    forecast = np.asarray(
+                        res.get_forecast(steps=forecast_steps).predicted_mean)
+                    p_last = max(last_val * sigma0 + mu0, eps)
+                    for j, h in enumerate(self.horizons):
+                        p_hat = max(forecast[h] * sigma0 + mu0, eps)
+                        preds[i, j] = np.log(p_hat / p_last)
+                except Exception:
+                    preds[i, :] = 0.0
+
+        return preds
+
+    def _get_norm_stats(self, loader) -> Tuple[float, float]:
+        """Recover the copper price channel's (index 0) training mean/std
+        from the loader's underlying dataset, so the z-scored series this
+        baseline operates on can be de-normalized back to real price units.
+
+        `RawPriceDataset` (the dataset actually backing ARIMA's loaders in
+        the active pipeline) stores per-variable `.mean`/`.std` arrays fit on
+        the training split; index 0 is copper. Falls back to (0.0, 1.0) --
+        i.e. treats the series as already being in price units -- if no such
+        attributes are found, which only happens for datasets that don't
+        expose them (e.g. ad hoc synthetic TensorDatasets used in tests).
+        """
+        dataset = getattr(loader, "dataset", None)
+        mean = getattr(dataset, "mean", None)
+        std = getattr(dataset, "std", None)
+        if mean is not None and std is not None:
+            mean = np.asarray(mean).reshape(-1)
+            std = np.asarray(std).reshape(-1)
+            if mean.size >= 1 and std.size >= 1:
+                return float(mean[0]), float(std[0])
+        logger.warning("ARIMABaseline: no per-variable mean/std found on the "
+                       "loader's dataset; treating the ARIMA input series as "
+                       "already unnormalized (mean=0, std=1) for the "
+                       "log-return conversion.")
+        return 0.0, 1.0
+
+    def _loader_to_series(self, loader):
+        """Extract the copper price channel (index 0) as (N, lookback) arrays."""
+        xs, ys = [], []
+        for x, y in loader:
+            x_np = x.numpy()
+            if x_np.ndim == 4:
+                # VMD-mode loader (B, T, K, N): reconstruct raw series by
+                # summing modes for the copper variable (index 0).
+                series = x_np[:, :, :, 0].sum(axis=2)  # (B, T)
+            else:
+                # Raw loader (B, T, N)
+                series = x_np[:, :, 0]  # (B, T)
+            xs.append(series)
+            ys.append(y.numpy())
+        return np.concatenate(xs), np.concatenate(ys)
+
+
 class LightGBMBaseline:
     """LightGBM with flattened features."""
 

@@ -6,20 +6,19 @@ data:
   val_end: "2021-12-31"
   # test: 2022-01-01 to end
 
+  # All 10 variables sourced via Yahoo Finance only (must match src/data_pipeline.py
+  # TICKERS exactly). FRED and BDI (Baltic Dry Index) are out of scope and removed.
   tickers:
     copper: "HG=F"
     aluminum: "ALI=F"
-    zinc: "ZNC=F"
-    nickel: "NI=F"
+    zinc: "^NQCIZNER"
+    nickel: "^NQCINIER"
     gold: "GC=F"
     oil: "CL=F"
     dxy: "DX-Y.NYB"
     sp500: "^GSPC"
     vix: "^VIX"
-
-  fred_series:
-    us10y: "DGS10"
-    bdi: "DBAIDTLNM"  # Baltic Dry Index (monthly, needs interpolation)
+    us10y: "^TNX"
 
   lookback: 60
   horizons: [1, 5, 10, 22]
@@ -28,9 +27,10 @@ vmd:
   K: 5
   alpha: 2000
   tau: 0.0
-  tol: 1e-7
+  tol: 1.0e-7
   max_iter: 500
-  rolling_window: 252  # 1 year rolling for leakage prevention
+  rolling_window: 252  # used by the (unused-by-default) rolling VMDDecomposer
+  refit_interval: 21  # expanding-window VMD refit cadence (leakage-safe default path)
 
 model:
   hidden_dim: 64
@@ -39,13 +39,25 @@ model:
   temporal_module: "lstm"  # lstm or transformer
   temporal_layers: 2
   dropout: 0.1
-  graph_type: "learned"  # learned, correlation, granger
+  graph_type: "learned"  # learned, correlation
 
 training:
   batch_size: 32
   epochs: 200
   learning_rate: 0.001
-  weight_decay: 1e-5
+  weight_decay: 1.0e-5
   patience: 20
   scheduler: "cosine"
   seed: 42
+
+# Hyperparameter optimization (Optuna, TPE + median pruning) -- opt-in, and
+# scoped to VMD-MFGNN (the proposed model) ONLY. The 6 locked baselines
+# (ARIMA/XGBoost/LSTM/Transformer/VMD-LSTM/SimpleMTGNN) and all 4 ablation
+# variants are NEVER tuned by HPO; they always use the settings above /
+# their own hardcoded defaults. This asymmetry is intentional (disclosed in
+# the paper) and defaults to disabled so the already-verified pipeline
+# behavior is unchanged unless a human explicitly opts in.
+hpo:
+  enabled: false
+  n_trials: 15
+  trial_epochs: 25

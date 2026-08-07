@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -9,11 +11,20 @@ from torch.utils.data import DataLoader, Dataset
 
 logger = logging.getLogger(__name__)
 
+# Locked 10-variable scope (see vmd-mfgnn-protocol/SKILL.md), all sourced via
+# Yahoo Finance only. FRED and BDI are explicitly out of scope.
+#
+# Note on zinc/nickel: there is no standalone COMEX/NYMEX-style "=F" futures
+# contract for zinc or nickel on Yahoo Finance (they trade on the LME, which
+# Yahoo does not mirror as a tradable future). "ZNC=F" / "NI=F" used previously
+# do not resolve to real instruments. The NASDAQ Commodity sub-indices below
+# are genuine, currently-listed Yahoo symbols that track zinc/nickel spot
+# price and are used as the closest available proxy.
 TICKERS = {
     "copper": "HG=F",
     "aluminum": "ALI=F",
-    "zinc": "ZNC=F",
-    "nickel": "NI=F",
+    "zinc": "^NQCIZNER",
+    "nickel": "^NQCINIER",
     "gold": "GC=F",
     "oil": "CL=F",
     "dxy": "DX-Y.NYB",
@@ -65,7 +76,27 @@ class DataDownloader:
 
 
 class VMDDecomposer:
-    """Rolling-window VMD to prevent temporal leakage."""
+    """True daily-refit rolling-window VMD -- leakage-safe by construction and
+    genuinely daily-varying (not a piecewise-constant staircase like
+    `VMDDecomposerExpanding`).
+
+    At every trading day t, VMD is refit from scratch on the window
+    signal[max(0, t-window+1) : t+1] -- i.e. strictly data up to and
+    including day t, never anything after it -- and only the LAST point of
+    each resulting mode is kept as that day's feature value. Because this
+    happens at every single t (not every `refit_interval` days), each mode's
+    assigned series is one genuine, independently-computed value per day,
+    matching the daily resolution of the raw price data instead of holding a
+    stale value constant across a ~21-day block.
+
+    Mode ordering caveat: VMD's ADMM optimization is not guaranteed to
+    converge to the same mode ordering across independent fits (mode k on
+    day t and mode k on day t+1 could correspond to different frequency
+    bands). To keep mode identity consistent over time, each day's modes are
+    re-sorted by ascending center frequency (`omega`, returned by
+    `vmdpy.VMD` alongside the modes) before being stored, so mode 0 is
+    always the lowest-frequency band and mode K-1 the highest, every day.
+    """
 
     def __init__(self, K: int = 5, alpha: int = 2000, tau: float = 0.0,
                  tol: float = 1e-7, max_iter: int = 500, rolling_window: int = 252):
@@ -77,8 +108,8 @@ class VMDDecomposer:
         self.rolling_window = rolling_window
 
     def decompose_series(self, signal: np.ndarray) -> np.ndarray:
-        """Decompose a single series using rolling-window VMD.
-        Returns: (K, T) array of modes.
+        """Decompose a single series using rolling-window VMD, refit at
+        EVERY trading day. Returns: (K, T) array of modes.
         """
         from vmdpy import VMD
 
@@ -86,20 +117,27 @@ class VMDDecomposer:
         modes = np.zeros((self.K, T))
         win = self.rolling_window
 
-        # For the first window, decompose the available data
         for t in range(T):
             start = max(0, t - win + 1)
-            segment = signal[start:t + 1]
+            segment = signal[start:t + 1]  # strictly data[start..t], no future
             if len(segment) < 2 * self.K:
                 # Too short for VMD, use simple approach
                 modes[0, t] = segment[-1]
                 continue
             try:
-                u, _, _ = VMD(segment, self.alpha, self.tau, self.K, 0, 1, self.tol)
-                # Take the last value of each mode
+                u, _, omega = VMD(segment, self.alpha, self.tau, self.K, 0, 1, self.tol)
+                # omega has shape (n_iters_used, K); the final row holds the
+                # converged center frequencies for this fit. Sort ascending
+                # so mode 0 is always lowest-frequency, mode K-1 highest,
+                # consistently across independent daily fits.
+                final_omega = omega[-1, :]
+                order = np.argsort(final_omega)
+                # Take the last value of each mode, applying the frequency-
+                # sorted order so mode identity is stable day to day.
                 for k in range(self.K):
-                    modes[k, t] = u[k, -1]
-            except Exception:
+                    modes[k, t] = u[order[k], -1]
+            except Exception as e:
+                logger.warning(f"VMD failed at t={t}: {e}")
                 # Fallback: assign to first mode
                 modes[0, t] = segment[-1]
 
@@ -129,9 +167,105 @@ class VMDDecomposer:
         return all_modes
 
 
+class VMDDecomposerExpanding:
+    """Leakage-safe expanding-window VMD with periodic refit.
+
+    NO LONGER THE DEFAULT (see `VMDDecomposer` above, which now is). This
+    class is kept on disk for reference/comparison, but `build_vmd_modes`'s
+    default (non-debug) path no longer calls it. Reason: refitting only
+    every `refit_interval` days and holding the last-point mode values
+    constant across the whole block produces piecewise-constant "staircase"
+    features -- a 60-day lookback window built from this decomposer contains
+    only ~3-4 distinct values per (variable, mode), not real daily-varying
+    data. A benchmark showed true daily-refit VMD (`VMDDecomposer`, rolling
+    252-day window) costs only ~30-40 minutes one-time CPU for the full
+    ~4,000-day x 10-variable dataset (cached afterward), so the
+    "computationally infeasible" rationale below no longer holds and this
+    class is superseded.
+
+    True daily-refit VMD (see `VMDDecomposer` above) is leakage-free -- each
+    day's modes come from a window that ends exactly at that day.
+
+    This class instead refits only every `refit_interval` trading days
+    (locked at 21, i.e. ~1 trading month per vmd-mfgnn-protocol/SKILL.md). At
+    each refit day R we run VMD once on the EXPANDING window signal[0:R+1]
+    -- all history available *as of* day R, and nothing after it. We take
+    the last-point mode values of that decomposition and hold them
+    (carry-forward) as the assigned modes for every day from R up to (but
+    not including) the next refit day R + refit_interval.
+
+    This guarantees zero future leakage: the modes assigned to day t were
+    computed from a decomposition window signal[0:R+1] where R <= t, so no
+    index > t is ever used. The cost is T/refit_interval VMD calls instead of
+    T, making it tractable, at the price of the assigned modes being
+    piecewise-constant within each 21-day block instead of updated daily.
+    """
+
+    def __init__(self, K: int = 5, alpha: int = 2000, tau: float = 0.0,
+                 tol: float = 1e-7, max_iter: int = 500, refit_interval: int = 21):
+        self.K = K
+        self.alpha = alpha
+        self.tau = tau
+        self.tol = tol
+        self.max_iter = max_iter
+        self.refit_interval = refit_interval
+
+    def decompose_series(self, signal: np.ndarray) -> Tuple[np.ndarray, List[int]]:
+        """Decompose a single series using expanding-window VMD, refit every
+        `refit_interval` days. Returns: ((K, T) modes array, list of refit day indices).
+        """
+        from vmdpy import VMD
+
+        T = len(signal)
+        modes = np.zeros((self.K, T))
+        refit_days = list(range(0, T, self.refit_interval))
+
+        last_values = np.zeros(self.K)
+        for R in refit_days:
+            segment = signal[:R + 1]  # expanding window: strictly data[0..R], no future
+            if len(segment) < 2 * self.K:
+                last_values = np.zeros(self.K)
+                last_values[0] = segment[-1]
+            else:
+                try:
+                    u, _, _ = VMD(segment, self.alpha, self.tau, self.K, 0, 1, self.tol)
+                    last_values = u[:, -1]
+                except Exception as e:
+                    logger.warning(f"VMD failed for window at refit day R={R}: {e}")
+                    last_values = np.zeros(self.K)
+                    last_values[0] = segment[-1]
+
+            block_end = min(R + self.refit_interval, T)
+            modes[:, R:block_end] = last_values[:, None]
+
+        return modes, refit_days
+
+    def decompose_all(self, df: pd.DataFrame) -> np.ndarray:
+        """Decompose all variables. Returns: (num_vars, K, T) array.
+        Caching is handled by the caller (`build_vmd_modes`), since the cache
+        needs a data hash + metadata sidecar, not just a plain .npy dump.
+        """
+        num_vars = df.shape[1]
+        T = df.shape[0]
+        all_modes = np.zeros((num_vars, self.K, T))
+
+        for i, col in enumerate(df.columns):
+            logger.info(f"  Expanding-window VMD decomposing {col} ({i + 1}/{num_vars})...")
+            signal = df[col].values.astype(np.float64)
+            all_modes[i], _ = self.decompose_series(signal)
+
+        return all_modes
+
+
 class VMDDecomposerFast:
-    """Batch VMD: decompose full series once (non-rolling). Faster but has leakage.
-    Use for quick experiments; VMDDecomposer for final results."""
+    """DEBUG-ONLY: batch VMD, decomposes the full series once (non-rolling).
+    Fast, but the decomposition of the training period is computed jointly
+    with validation/test-period data, i.e. it LEAKS future (including
+    test-set) data into training-period samples. Must never be the default
+    path for real experiments/reported results -- only reachable via the
+    explicit `debug_fast=True` argument to `build_vmd_modes` /
+    `create_datasets`. Use `VMDDecomposer` (the default, true daily-refit
+    rolling-window decomposer) for anything that touches reported metrics."""
 
     def __init__(self, K: int = 5, alpha: int = 2000, tau: float = 0.0,
                  tol: float = 1e-7):
@@ -186,6 +320,101 @@ def compute_mode_correlation_graph(modes: np.ndarray, band_idx: int,
     corr = np.nan_to_num(corr, nan=0.0)
     np.fill_diagonal(corr, 0.0)
     return np.abs(corr)
+
+
+def _hash_price_array(values: np.ndarray) -> str:
+    """SHA-256 hash of the raw price array bytes, used to invalidate a stale
+    VMD cache if the underlying data pull changes."""
+    return hashlib.sha256(np.ascontiguousarray(values).tobytes()).hexdigest()
+
+
+def build_vmd_modes(prices: pd.DataFrame, vc: dict, dc: dict,
+                     cache_path: str = "data/vmd_modes.npy",
+                     meta_path: Optional[str] = None,
+                     debug_fast: bool = False) -> np.ndarray:
+    """Build (or load from cache) VMD-decomposed modes for all variables.
+
+    debug_fast: if True, uses `VMDDecomposerFast` (full-series batch VMD).
+    This is fast but LEAKS future/test-period data into training-period
+    decompositions -- it exists only for quick, throwaway debugging/iteration
+    and must NEVER be the default used for real experiments or reported
+    metrics. The default (debug_fast=False) uses the leakage-safe, true
+    daily-refit `VMDDecomposer` (rolling window of `vc["rolling_window"]`
+    (default 252) trading days, refit at every single day -- see its
+    docstring for why this replaced the old `VMDDecomposerExpanding`
+    carry-forward approach, which produced piecewise-constant "staircase"
+    features).
+
+    Caching: results are cached to `cache_path` (a .npy) plus a JSON metadata
+    sidecar recording the split dates, VMD parameters, refit cadence, and a
+    sha256 hash of the input price array. If any of those change (e.g. a
+    fresh data pull with different prices, or different K/alpha), the cache
+    is treated as stale and recomputed -- so a prior run's cache can never be
+    silently reused against new/different data.
+    """
+    cache_path = Path(cache_path)
+    meta_path = Path(meta_path) if meta_path is not None else \
+        cache_path.with_name(cache_path.stem + "_meta.json")
+
+    price_values = prices.values.astype(np.float64)
+    data_hash = _hash_price_array(price_values)
+    rolling_window = vc.get("rolling_window", 252)
+
+    meta = {
+        "K": vc["K"],
+        "alpha": vc["alpha"],
+        "tau": vc["tau"],
+        "tol": vc["tol"],
+        "rolling_window": rolling_window,
+        "decomposer": "VMDDecomposerFast" if debug_fast else "VMDDecomposer",
+        "debug_fast": debug_fast,
+        "split_dates": {
+            "start_date": dc.get("start_date"),
+            "train_end": dc.get("train_end"),
+            "val_end": dc.get("val_end"),
+            "end_date": dc.get("end_date"),
+        },
+        "variables": list(prices.columns),
+        "num_rows": int(len(prices)),
+        "data_hash": data_hash,
+    }
+
+    if cache_path.exists() and meta_path.exists():
+        try:
+            with open(meta_path) as f:
+                cached_meta = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            cached_meta = {}
+        if cached_meta == meta:
+            logger.info(f"Loading cached VMD modes from {cache_path} "
+                        f"(data hash + params match, debug_fast={debug_fast})")
+            return np.load(cache_path)
+        else:
+            logger.warning(f"VMD cache at {cache_path} is stale (data hash or "
+                            f"params changed) -- recomputing")
+
+    if debug_fast:
+        logger.warning("debug_fast=True: using VMDDecomposerFast (full-series "
+                        "batch VMD). This LEAKS future/test data into training "
+                        "decompositions -- for quick debugging only, never for "
+                        "reported results.")
+        decomposer = VMDDecomposerFast(K=vc["K"], alpha=vc["alpha"],
+                                        tau=vc["tau"], tol=vc["tol"])
+        modes = decomposer.decompose_all(prices, cache_path=None)
+    else:
+        decomposer = VMDDecomposer(K=vc["K"], alpha=vc["alpha"],
+                                    tau=vc["tau"], tol=vc["tol"],
+                                    max_iter=vc.get("max_iter", 500),
+                                    rolling_window=rolling_window)
+        modes = decomposer.decompose_all(prices, cache_path=None)
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(cache_path, modes)
+    with open(meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
+    logger.info(f"Saved VMD modes to {cache_path} and metadata to {meta_path}")
+
+    return modes
 
 
 class CopperDataset(Dataset):
@@ -291,8 +520,14 @@ class RawPriceDataset(Dataset):
         return torch.FloatTensor(x), torch.FloatTensor(y)
 
 
-def create_datasets(config: dict) -> Dict:
-    """Orchestrate data download, VMD decomposition, and dataset creation."""
+def create_datasets(config: dict, debug_fast: bool = False) -> Dict:
+    """Orchestrate data download, VMD decomposition, and dataset creation.
+
+    debug_fast: passed through to `build_vmd_modes`. Leave False (default)
+    for any real experiment/reported result -- it selects the leakage-safe,
+    true daily-refit rolling-window VMD (`VMDDecomposer`). Only set True for
+    quick, throwaway local debugging.
+    """
     dc = config["data"]
     vc = config["vmd"]
 
@@ -313,10 +548,12 @@ def create_datasets(config: dict) -> Dict:
     val_idx = int((dates <= val_end).sum())
     logger.info(f"Split: train={train_idx}, val={val_idx-train_idx}, test={len(dates)-val_idx}")
 
-    # VMD decomposition (use fast version for initial experiments)
-    decomposer = VMDDecomposerFast(K=vc["K"], alpha=vc["alpha"],
-                                    tau=vc["tau"], tol=vc["tol"])
-    modes = decomposer.decompose_all(prices, cache_path="data/vmd_modes.npy")
+    # VMD decomposition: leakage-safe, true daily-refit rolling-window VMD
+    # by default (see VMDDecomposer / build_vmd_modes docstrings).
+    # debug_fast=True opts into the leaky full-series batch decomposer for
+    # quick iteration only -- never for reported results.
+    modes = build_vmd_modes(prices, vc, dc, cache_path="data/vmd_modes.npy",
+                             debug_fast=debug_fast)
 
     lookback = dc["lookback"]
     horizons = dc["horizons"]

@@ -182,7 +182,8 @@ def plot_ablation_results(ablation_results: Dict, horizons: List[int],
 
 
 def generate_all_figures(config: dict, data: Dict, results: Dict,
-                         ablation_results: Dict, output_dir: str = "results/figures"):
+                         ablation_results: Dict, output_dir: str = "results/figures",
+                         model=None, attn_weights=None):
     """Generate all paper figures."""
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     horizons = data["horizons"]
@@ -190,6 +191,14 @@ def generate_all_figures(config: dict, data: Dict, results: Dict,
     # Fig 1: VMD decomposition
     plot_vmd_decomposition(data["modes"], data["prices"],
                            data["variable_names"], var_idx=0, output_dir=output_dir)
+
+    # Fig 2: Frequency graphs
+    if model is not None:
+        plot_frequency_graphs(model, data["variable_names"], output_dir)
+
+    # Fig 3: Attention weights
+    if attn_weights is not None:
+        plot_attention_weights(attn_weights, horizons, output_dir)
 
     # Fig 4: Model comparison
     plot_results_comparison(results, horizons, output_dir)

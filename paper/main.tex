@@ -16,7 +16,7 @@
 
 \begin{frontmatter}
 
-\title{Multi-Frequency Graph Neural Network with Variational Mode Decomposition for Copper Price Forecasting}
+\title{VMD-MFGNN: Per-Frequency-Band Graph Construction from Variational Mode Decomposition for Copper Price Forecasting}
 
 \author[inst1]{Author One\corref{cor1}}
 \ead{author1@institution.edu}
@@ -28,7 +28,7 @@
             country={Country}}
 
 \begin{abstract}
-Copper price forecasting is critical for risk management in commodity markets, yet existing approaches either model inter-commodity dependencies without accounting for scale-dependent relationships, or apply signal decomposition without capturing cross-variable interactions. We propose VMD-MFGNN, a Multi-Frequency Graph Neural Network that combines Variational Mode Decomposition (VMD) with frequency-specific graph construction to model scale-dependent inter-commodity dependencies. Our framework decomposes multivariate commodity and macroeconomic time series into frequency bands via VMD, constructs a separate inter-variable graph at each frequency scale, applies Graph Attention Networks to capture band-specific cross-variable dependencies, and fuses predictions across frequency bands with learned attention weights. To our knowledge, this is the first framework that constructs frequency-specific inter-commodity graph structures from decomposed modes for price forecasting. Experiments on daily copper prices (2010--2025) with 10 related variables demonstrate that VMD-MFGNN outperforms 15 baselines spanning econometric, machine learning, deep learning, decomposition-ensemble, and graph neural network methods across four forecast horizons (1, 5, 10, 22 days). Ablation studies confirm that both multi-frequency graph construction and VMD decomposition contribute significantly. The learned frequency-specific graphs reveal interpretable, scale-dependent inter-commodity relationships---for instance, copper-dollar correlations dominate at low frequencies (macro trends) while copper-inventory links emerge at higher frequencies (supply dynamics).
+Copper price forecasting methods that combine signal decomposition with graph-based relational modeling either (a) decompose the copper series into frequency components but treat copper as an isolated univariate series, discarding inter-commodity structure, or (b) build a single cross-commodity graph over raw prices, collapsing scale-dependent dependencies into one static representation. We propose VMD-MFGNN, a Multi-Frequency Graph Neural Network that decomposes a 10-variable commodity/macro system (copper and nine related futures and indices) via Variational Mode Decomposition (VMD) into $K=5$ frequency bands, constructs a \emph{separate} learned inter-variable graph for each band, applies Graph Attention Networks (GAT) per band for cross-variable modeling and an LSTM for temporal modeling, and fuses band-level representations via learned attention weights. Unlike prior VMD+GNN work in finance, which pools decomposed modes into a single graph (MBTI-Net; Li and Liu, 2026) or forecasts copper with a single graph over undecomposed prices (Sun et al., 2025), VMD-MFGNN's core architectural claim is narrower and specific: constructing one graph \emph{per frequency band}, rather than one pooled graph across bands, better captures scale-dependent inter-commodity relationships. We evaluate this claim with four ablations (full per-band model, no-VMD raw-price graph, single pooled graph across bands, and a fixed correlation-threshold graph in place of the learned adjacency) and compare against six standard baselines (ARIMA, XGBoost, LSTM, Transformer, VMD-LSTM, SimpleMTGNN) across four forecast horizons (1, 5, 10, 22 trading days) on a single chronological train/validation/test split (2010--2019/2020--2021/2022--2025). This paper addresses three research questions: (RQ1) does per-band graph construction outperform a single pooled graph across bands, isolating the contribution of frequency-specific relational structure; (RQ2) does per-band graph construction outperform a no-VMD raw-price graph and a fixed correlation-threshold graph, isolating the contributions of decomposition and of end-to-end learned adjacency respectively; and (RQ3) does VMD-MFGNN produce a statistically significant forecasting edge over standard, untuned baselines under a Diebold-Mariano test. At the time of writing, the training and evaluation phase of this study (Phase 2 of the project protocol) has not yet been executed; all result tables in this paper are structured with the metrics and comparisons that will populate them, and are explicitly marked as pending. No numeric results are claimed or fabricated here.
 \end{abstract}
 
 \begin{keyword}
@@ -43,26 +43,26 @@ copper price forecasting \sep graph neural networks \sep variational mode decomp
 
 Copper is among the most economically significant industrial metals, often termed ``Dr.\ Copper'' for its perceived ability to signal macroeconomic health \citep{Becerra2022}. Global copper output reached approximately 22.8 million metric tonnes in 2024, with China consuming over 50\% of global demand. The ongoing energy transition---electric vehicles require 53--83\,kg of copper per unit versus 15--23\,kg for internal combustion engines---is creating structural demand shifts that complicate traditional forecasting approaches \citep{IEA2024}. Accurate copper price forecasting is therefore essential for mining companies, commodity traders, policymakers, and manufacturers.
 
-Recent advances in copper price forecasting have progressed along two largely independent tracks. The first track employs signal decomposition methods, particularly Variational Mode Decomposition (VMD), to separate copper price series into frequency components before forecasting each independently. VMD-LSTM \citep{Liu2020} established the benchmark with 290 citations, and secondary decomposition approaches (e.g., CEEMDAN+VMD) represent the current frontier \citep{Zhang2025a, ZhangKe2025}. However, these methods treat copper as an isolated univariate series, ignoring the rich inter-commodity dependencies that drive prices.
+Recent advances in copper price forecasting have progressed along two largely overlapping tracks. The first track employs signal decomposition methods, particularly Variational Mode Decomposition (VMD), to separate copper price series into frequency components before forecasting each independently. VMD-LSTM \citep{Liu2020} established the benchmark with 290 citations, and secondary decomposition approaches (e.g., CEEMDAN+VMD) represent the current frontier \citep{Zhang2025a, ZhangKe2025}. Most of these methods treat copper as an isolated univariate series, discarding the inter-commodity dependencies that drive prices, although a small number of very recent papers now combine VMD with graph neural networks (Section~\ref{sec:related}).
 
-The second track applies Graph Neural Networks (GNN) to model cross-asset relationships. GNNs have shown strong results in stock prediction \citep{Wu2020mtgnn, Cheng2022, Qian2024} and have recently been applied to copper via a Multi-view Graph Transformer \citep{Sun2025}. However, these approaches construct a single graph that collapses multi-scale dependency structures into one static representation, missing the fundamental insight that inter-commodity relationships are frequency-dependent.
+The second track applies Graph Neural Networks (GNN) to model cross-asset relationships. GNNs have shown strong results in stock prediction \citep{Wu2020mtgnn, Cheng2022, Qian2024} and have recently been applied to copper via a Multi-view Graph Transformer \citep{Sun2025}, which constructs a single graph over undecomposed prices. Separately, at least one recent paper, MBTI-Net \citep{LiLiu2026}, combines VMD decomposition with a GNN for copper futures, but pools the decomposed modes into a single graph rather than constructing one graph per frequency band. In both cases, a single graph structure collapses whatever multi-scale dependency structure exists across frequency bands into one static representation.
 
-We identify a critical gap at the intersection of these two tracks: \textbf{no existing work constructs frequency-specific inter-variable graphs from decomposed modes for commodity forecasting}. We verify this through systematic search of the literature (Section~\ref{sec:related}). The gap is significant because commodity relationships are inherently multi-scale: the copper-dollar correlation at low frequencies (reflecting long-term macroeconomic co-movement) is structurally different from the copper-dollar relationship at high frequencies (reflecting daily trading noise). A single graph conflates these distinct dependency structures.
+Our claim is intentionally narrow, and we state it as such rather than as a claim to be first at the VMD+GNN intersection in finance: \textbf{no existing work constructs a separate inter-variable graph for each VMD frequency band across a multi-commodity macro system}, as opposed to pooling bands into one graph (MBTI-Net) or omitting the decomposition-graph link altogether (Sun et al., 2025). We verify this framing through a systematic literature comparison in Section~\ref{sec:related}. The distinction matters because commodity relationships are plausibly multi-scale: the copper-dollar correlation at low frequencies (reflecting long-term macroeconomic co-movement) may differ structurally from the copper-dollar relationship at high frequencies (reflecting daily trading noise). A single graph, pooled or otherwise, cannot represent both simultaneously; whether separating them by band actually improves forecasting accuracy, rather than merely being architecturally distinct, is the empirical question this paper is designed to answer.
 
-We propose VMD-MFGNN (\textbf{V}ariational \textbf{M}ode \textbf{D}ecomposition \textbf{M}ulti-\textbf{F}requency \textbf{G}raph \textbf{N}eural \textbf{N}etwork), the first framework that:
+VMD-MFGNN (\textbf{V}ariational \textbf{M}ode \textbf{D}ecomposition \textbf{M}ulti-\textbf{F}requency \textbf{G}raph \textbf{N}eural \textbf{N}etwork):
 
 \begin{enumerate}
-    \item Decomposes multivariate commodity and macroeconomic time series into $K$ frequency bands via VMD;
+    \item Decomposes a 10-variable commodity/macro time series into $K=5$ frequency bands via VMD, using a leakage-safe expanding window refit every 21 trading days;
     \item Constructs a \emph{separate} learned inter-variable graph at each frequency band, capturing scale-dependent cross-commodity dependencies;
-    \item Applies Graph Attention Networks (GAT) per frequency band for spatial modeling and LSTM for temporal modeling;
+    \item Applies Graph Attention Networks (GAT) per frequency band for spatial modeling and an LSTM for temporal modeling;
     \item Fuses band-level predictions via learned attention weights that reveal which frequency scales matter most for each forecast horizon.
 \end{enumerate}
 
 Our contributions are:
 \begin{itemize}
-    \item \textbf{Novel architecture}: The first GNN framework with frequency-specific graph construction from VMD-decomposed commodity time series.
-    \item \textbf{Comprehensive evaluation}: Comparison against 15 baselines (ARIMA, VAR, XGBoost, LightGBM, LSTM, GRU, CNN-LSTM, Transformer, VMD-LSTM, VMD-Transformer, VMD-Attention-LSTM, StemGNN-style, MTGNN-style, GNN-Transformer) across four forecast horizons.
-    \item \textbf{Interpretability}: Frequency-specific inter-commodity graph visualizations and mode importance analysis that provide economically meaningful insights.
+    \item \textbf{A narrowly scoped architectural claim, empirically isolated}: a per-frequency-band graph construction is compared directly against a capacity-disclosed pooled-graph alternative (Section~\ref{sec:ablation}), rather than asserted without a controlled comparison.
+    \item \textbf{An evaluation protocol disclosed in full, including its limitations}: a single chronological train/validation/test split, six standard (untuned) baselines, one hyperparameter-optimized proposed model, and a Diebold-Mariano significance test applied only where a valid resampling unit exists (Section~\ref{sec:experiments}).
+    \item \textbf{Interpretability}: frequency-specific inter-commodity graph visualizations and attention-based mode importance, to be reported once Phase~2 training completes.
 \end{itemize}
 
 %% ============================================================
@@ -75,17 +75,19 @@ Traditional approaches include ARIMA \citep{Becerra2022}, GARCH \citep{Garcia201
 
 \subsection{Decomposition-Ensemble Methods}
 
-Signal decomposition followed by component-wise forecasting is the most active methodological area. VMD-LSTM \citep{Liu2020} is the most cited work (290 citations), demonstrating that VMD's variational formulation avoids the mode mixing issues of EMD/EEMD \citep{Dragomiretskiy2014}. Recent advances include secondary decomposition \citep{LiuLiu2022, Zhang2025a}, adaptive VMD parameter selection \citep{ZhangKe2025}, and complexity-aware decomposition \citep{LiLiu2026}. However, all decomposition-ensemble methods treat variables independently, discarding cross-variable information.
+Signal decomposition followed by component-wise forecasting is the most active methodological area. VMD-LSTM \citep{Liu2020} is the most cited work (290 citations), demonstrating that VMD's variational formulation avoids the mode mixing issues of EMD/EEMD \citep{Dragomiretskiy2014}. Recent advances include secondary decomposition \citep{LiuLiu2022, Zhang2025a}, adaptive VMD parameter selection \citep{ZhangKe2025}, and complexity-aware decomposition \citep{LiLiu2026}. The large majority of decomposition-ensemble methods treat variables independently, discarding cross-variable information.
 
 \subsection{Graph Neural Networks for Financial Forecasting}
 
-MTGNN \citep{Wu2020mtgnn} introduced learned adaptive adjacency matrices for multivariate time series. StemGNN \citep{Cao2020} operates in the joint spectral-temporal domain. FourierGNN \citep{Yi2023} unifies spatial and temporal modeling via Fourier operators. In finance, THGNN \citep{Xiang2023} uses dynamic heterogeneous graphs for stocks, and MDGNN \citep{Qian2024} introduces multi-relational dynamic graphs.
+MTGNN \citep{Wu2020mtgnn} introduced learned adaptive adjacency matrices for multivariate time series, and our per-band graph construction (Section~\ref{sec:graph}) follows the same adjacency parameterization applied independently within each frequency band. StemGNN \citep{Cao2020} operates in the joint spectral-temporal domain. FourierGNN \citep{Yi2023} unifies spatial and temporal modeling via Fourier operators. In finance, THGNN \citep{Xiang2023} uses dynamic heterogeneous graphs for stocks, and MDGNN \citep{Qian2024} introduces multi-relational dynamic graphs.
 
-For commodities, the literature is sparse. \citet{Sun2025} proposed a Multi-view Graph Transformer for copper (the only dedicated copper GNN paper). \citet{Hu2023} applied heterogeneous continual GNN to 49 Chinese futures contracts. \citet{Zhai2024} used a Graph Fourier Transformer for base metals.
+For commodities specifically, the literature is sparse. \citet{Sun2025} proposed a Multi-view Graph Transformer for copper that constructs a single graph over undecomposed price data---the graph structure does not vary by frequency scale. \citet{Hu2023} applied heterogeneous continual GNN to 49 Chinese futures contracts. \citet{Zhai2024} used a Graph Fourier Transformer for base metals.
 
-\subsection{VMD Combined with GNN}
+\subsection{VMD Combined with GNN, and Positioning of This Work}
 
-Nine papers combine VMD with GNN (2022--2026), all outside finance: traffic forecasting \citep{Ahmad2024, Ahmad2025}, air quality \citep{Pei2022}, wind energy \citep{ChengTsai2026, Bao2025}, and industrial applications \citep{Yuan2025}. Critically, \textbf{none of these papers (a) apply VMD+GNN to financial data, (b) construct graph topology from decomposed modes, or (c) model cross-frequency inter-variable dependencies}. The closest work in finance is \citet{ZhengZhufu2025}, who combine DCT (not VMD) with cross-scale GNN for single-stock prediction (not inter-commodity). Our work fills this triple gap.
+A small number of papers combine VMD with GNN, mostly outside finance: traffic forecasting \citep{Ahmad2024, Ahmad2025}, air quality \citep{Pei2022}, wind energy \citep{ChengTsai2026, Bao2025}, and industrial applications \citep{Yuan2025}. Within finance, \citet{LiLiu2026} (``MBTI-Net'') combines VMD decomposition with a GNN for copper futures price forecasting; this is the closest prior work to ours and rules out any claim of being first to combine VMD and GNNs for copper. Critically, MBTI-Net pools the decomposed VMD modes into a single unified graph before applying graph convolution---the graph topology does not vary across frequency bands. \citet{ZhengZhufu2025} combine DCT (not VMD) with a cross-scale GNN for single-stock prediction, not multi-commodity relational modeling.
+
+The gap we target is therefore precise: among work that combines signal decomposition with graph-based relational modeling for commodity or financial time series, we are not aware of any that constructs a \emph{separate} graph per decomposed frequency band across a multi-commodity system, as opposed to (a) pooling bands into one graph (MBTI-Net) or (b) using a single graph over undecomposed data (Sun et al., 2025). We do not claim priority over VMD+GNN combinations generally, nor over GNN applications to copper generally; we isolate and test the specific architectural choice of per-band versus pooled graph construction directly against a matched pooled-graph baseline (Section~\ref{sec:ablation}), which to our knowledge no prior copper or commodity forecasting paper does.
 
 %% ============================================================
 \section{Methodology}
@@ -93,7 +95,7 @@ Nine papers combine VMD with GNN (2022--2026), all outside finance: traffic fore
 
 \subsection{Problem Formulation}
 
-Given $N$ multivariate time series $\{\mathbf{x}_1, \ldots, \mathbf{x}_N\}$ representing copper price and related commodity/macroeconomic variables, we aim to forecast the copper price return $r_{t+h} = \ln(p_{t+h}/p_t)$ at horizons $h \in \{1, 5, 10, 22\}$ trading days, using a lookback window of $L$ timesteps.
+Given $N=10$ multivariate time series $\{\mathbf{x}_1, \ldots, \mathbf{x}_N\}$ representing copper price and related commodity/macroeconomic variables, we aim to forecast the copper price return $r_{t+h} = \ln(p_{t+h}/p_t)$ at horizons $h \in \{1, 5, 10, 22\}$ trading days, using a lookback window of $L$ timesteps.
 
 \subsection{Variational Mode Decomposition}
 
@@ -103,18 +105,18 @@ VMD \citep{Dragomiretskiy2014} decomposes a signal $f(t)$ into $K$ band-limited 
 \end{equation}
 where $\omega_k$ is the center frequency of mode $k$. The constrained problem is solved via ADMM in the Fourier domain with penalty parameter $\alpha$.
 
-We apply VMD independently to each of the $N$ input variables, yielding a tensor of modes $\mathbf{U} \in \mathbb{R}^{N \times K \times T}$. To prevent temporal leakage, we use the fast batch decomposition for training data (where the full history is available) and note that rolling-window VMD should be used for live deployment.
+We apply VMD independently to each of the $N=10$ input variables with $K=5$ modes, yielding a tensor of modes $\mathbf{U} \in \mathbb{R}^{N \times K \times T}$. To prevent temporal leakage, decomposition uses an \emph{expanding window}: at each refit point, VMD is recomputed using only data available up to that point in time, never future data, and the resulting modes are carried forward until the next refit. The window is refit every 21 trading days as a compute/accuracy tradeoff (Section~\ref{sec:limitations}); a full re-decomposition at every timestep was judged unnecessary and computationally prohibitive at this data scale. Decomposed modes and refit metadata (split dates, VMD parameters, and a hash of the underlying price data) are cached to disk, with cache invalidation triggered by any change to the underlying data or parameters.
 
 \subsection{Frequency-Specific Graph Construction}
 \label{sec:graph}
 
-The key innovation of VMD-MFGNN is constructing a \emph{separate} graph $G_k = (V, E_k)$ for each frequency band $k$, where nodes $V = \{1, \ldots, N\}$ represent the $N$ variables and edges $E_k$ capture band-specific inter-variable dependencies.
+The central architectural choice in VMD-MFGNN is constructing a \emph{separate} graph $G_k = (V, E_k)$ for each frequency band $k \in \{1,\ldots,K\}$, where nodes $V = \{1, \ldots, N\}$ represent the $N=10$ variables and edges $E_k$ capture band-specific inter-variable dependencies. This is directly contrasted, via ablation, against a single graph pooled across all $K$ bands (Section~\ref{sec:ablation}).
 
-We employ learned adaptive adjacency matrices following \citet{Wu2020mtgnn}. For each band $k$, two embedding matrices $\mathbf{E}^{(1)}_k, \mathbf{E}^{(2)}_k \in \mathbb{R}^{N \times d}$ are randomly initialized and jointly optimized:
+We employ learned adaptive adjacency matrices following \citet{Wu2020mtgnn}, applied independently within each band. For each band $k$, two embedding matrices $\mathbf{E}^{(1)}_k, \mathbf{E}^{(2)}_k \in \mathbb{R}^{N \times d}$ are randomly initialized and jointly optimized:
 \begin{equation}
 \mathbf{A}_k = \text{softmax}\left(\text{ReLU}\left(\mathbf{E}^{(1)}_k {\mathbf{E}^{(2)}_k}^\top / \sqrt{d}\right)\right)
 \end{equation}
-This produces $K$ asymmetric adjacency matrices, each capturing directional dependencies at its frequency scale. The asymmetry is important: information flow in commodity markets is often directional (e.g., oil price changes lead copper price changes, not vice versa).
+This produces $K$ adjacency matrices, one per frequency band, each capturing dependencies at its own frequency scale. As an ablation-only alternative (Section~\ref{sec:ablation}), the learned adjacency can be replaced by a fixed, precomputed adjacency built from Pearson correlation between variables' band signals, thresholded at $|r| > 0.3$ (edges below this magnitude are dropped, following a conventional weak-to-moderate correlation cutoff).
 
 \subsection{Frequency Band Module}
 
@@ -124,9 +126,9 @@ For each band $k$, a \textbf{FrequencyBandModule} processes the $k$-th modes of 
 \begin{equation}
 \mathbf{h}^{(k)}_{t} = \text{GAT}(\mathbf{u}^{(k)}_{t}, \mathbf{A}_k) + \mathbf{u}^{(k)}_{t}
 \end{equation}
-with residual connections and layer normalization.
+with residual connections and layer normalization, stacked over \texttt{num\_gnn\_layers} GAT layers.
 
-\textbf{Temporal Layer.} The GAT-enhanced representations are fed to a 2-layer LSTM across the temporal dimension to capture sequential dependencies:
+\textbf{Temporal Layer.} The GAT-enhanced representations are fed to a multi-layer LSTM across the temporal dimension, applied independently per variable, to capture sequential dependencies:
 \begin{equation}
 \mathbf{z}^{(k)} = \text{LSTM}(\mathbf{h}^{(k)}_{1}, \ldots, \mathbf{h}^{(k)}_{L})
 \end{equation}
@@ -143,11 +145,17 @@ where $\mathbf{q}$ is a learnable query vector. The attention weights $\{w_k\}$ 
 
 \subsection{Prediction and Training}
 
-Separate linear heads map $\mathbf{z}_{\text{fused}}$ to predictions at each horizon:
-$\hat{r}_{t+h} = \text{MLP}_h(\mathbf{z}_{\text{fused}})$. The model is trained end-to-end with MSE loss:
+Separate linear heads (one per horizon) map $\mathbf{z}_{\text{fused}}$ to predictions:
+$\hat{r}_{t+h} = \text{MLP}_h(\mathbf{z}_{\text{fused}})$. The model is trained end-to-end with MSE loss summed across the four horizons:
 \begin{equation}
 \mathcal{L} = \sum_{h \in \mathcal{H}} \frac{1}{|\mathcal{T}|} \sum_{t \in \mathcal{T}} (r_{t+h} - \hat{r}_{t+h})^2
 \end{equation}
+The best-validation-loss checkpoint is selected and used for all reported models (Section~\ref{sec:impl}).
+
+\subsection{Complexity Analysis}
+\label{sec:complexity}
+
+Let $N=10$ be the number of variables, $T=L$ the lookback window length, $K=5$ the number of VMD modes, $d_h$ the hidden dimension, and $H$ the number of GAT attention heads. Within one frequency band, the GAT layer operates on a fully-connected graph of $N$ nodes at every timestep, giving per-timestep cost $\mathcal{O}(N^2 d_h/H)$ for the attention computation and $\mathcal{O}(N d_h^2)$ for the linear projections, repeated over $T$ timesteps and \texttt{num\_gnn\_layers} GAT layers; the per-variable LSTM that follows costs $\mathcal{O}(N T d_h^2)$. Because this cost is incurred independently for each of the $K$ bands, VMD-MFGNN's total forward-pass cost is $\mathcal{O}(K(N^2 T d_h + N T d_h^2))$, i.e., $K\times$ the cost of a single-graph architecture with otherwise identical per-band capacity. This is the direct computational price of per-band graph construction, and is the reason the pooled-graph ablation (Section~\ref{sec:ablation}) is evaluated as a single-graph, single-pass alternative rather than dismissed a priori as architecturally uninteresting. With the default configuration ($N=10$, $K=5$, $d_h=64$, $H=4$, \texttt{num\_gnn\_layers}$=2$), VMD-MFGNN has 59{,}588 trainable parameters; the pooled-graph ablation variant (Section~\ref{sec:ablation}), which processes one graph instead of $K$, has 13{,}450 trainable parameters under the same base configuration (77\% fewer)---this asymmetry is a capacity confound discussed explicitly in Section~\ref{sec:ablation} and Section~\ref{sec:limitations}, not treated as an incidental detail.
 
 %% ============================================================
 \section{Experimental Setup}
@@ -155,114 +163,178 @@ $\hat{r}_{t+h} = \text{MLP}_h(\mathbf{z}_{\text{fused}})$. The model is trained 
 
 \subsection{Data}
 
-We use daily data from January 2010 to December 2025. The target variable is LME copper 3-month futures (proxied by COMEX HG=F). Input variables ($N=10$) include: copper, aluminum, zinc, nickel, gold, crude oil (WTI), US Dollar Index (DXY), S\&P 500, VIX, and US 10-year Treasury yield. Data is obtained from Yahoo Finance and FRED.
+We use daily data from January 2010 to December 2025, sourced entirely from Yahoo Finance (no FRED, BDI, TC/RC, or COT data are used). The target variable is COMEX copper futures (HG=F). Input variables ($N=10$) are: copper (HG=F), aluminum (ALI=F), zinc, nickel, gold (GC=F), crude oil / WTI (CL=F), US Dollar Index (DX-Y.NYB), S\&P 500 (\^{}GSPC), VIX (\^{}VIX), and the US 10-year Treasury yield (\^{}TNX). Zinc and nickel have no standalone Yahoo Finance futures ticker (they are LME-only instruments); we substitute the corresponding NASDAQ commodity sub-indices (\^{}NQCIZNER for zinc, \^{}NQCINIER for nickel) as the closest available Yahoo Finance proxies. This substitution is a data-availability compromise, not a methodological choice, and is discussed further in Section~\ref{sec:limitations}.
 
-\textbf{Split:} Training (2010--2019), validation (2020--2021, includes COVID), test (2022--2025, includes supply shocks, rate hikes, and green transition effects).
+\textbf{Split.} A single chronological train/validation/test split is used: training (2010--2019), validation (2020--2021, includes COVID), test (2022--2025, includes supply shocks, rate hikes, and green-transition demand effects). This is \emph{not} a walk-forward or rolling-origin evaluation with multiple folds; the implications for statistical testing are discussed in Section~\ref{sec:limitations}.
 
 \subsection{Baselines}
+\label{sec:baselines}
 
-We compare against 15 baselines organized in five categories:
+We compare VMD-MFGNN against six baselines: ARIMA, XGBoost, LSTM, Transformer, VMD-LSTM, and SimpleMTGNN, spanning econometric, machine-learning, deep-learning, decomposition-ensemble, and graph-based categories. All six run with standard, reasonable, hand-set configurations; none receive hyperparameter optimization (Section~\ref{sec:hpo}).
+
+\subsection{Hyperparameter Optimization}
+\label{sec:hpo}
+
+VMD-MFGNN, the proposed model, is tuned via a lightweight Optuna study (TPE sampler with a median pruner), searching hidden dimension $\in \{32,64,128\}$, number of attention heads $\in \{2,4,8\}$ (constrained so hidden dimension is divisible by the head count), learning rate (log-uniform, $10^{-4}$ to $10^{-2}$), dropout (uniform, 0.05 to 0.3), and number of GNN layers $\in \{1,2,3\}$, over 15 trials of 25 epochs each by default. The six baselines are \emph{not} tuned; they run at standard/hardcoded settings. This asymmetry is a deliberate, disclosed methodological choice rather than an oversight: tuning all seven models under a full hyperparameter search would multiply compute cost roughly by the trial count and was judged infeasible within this project's compute and time budget, and tuning only the proposed model against standard baselines is common, defensible practice in comparison papers under such constraints, provided it is disclosed (Section~\ref{sec:limitations}). HPO results (best parameters and the full trial history) are saved for reproducibility.
+
+\subsection{Ablation Studies}
+\label{sec:ablation}
+
+Four ablations isolate the contribution of each architectural component. Because this study uses a single chronological split rather than multiple walk-forward folds or multiple random seeds (Section~\ref{sec:limitations}), the ablation results below are reported as point estimates per horizon, without a paired significance test; a valid resampling unit (folds or seeds) does not exist under the current protocol to compute one.
 
 \begin{itemize}
-    \item \textbf{Econometric:} ARIMA, VAR
-    \item \textbf{Machine Learning:} XGBoost, LightGBM
-    \item \textbf{Deep Learning:} LSTM, GRU, CNN-LSTM, Transformer
-    \item \textbf{Decomposition+DL:} VMD-LSTM, VMD-Transformer, VMD-Attention-LSTM
-    \item \textbf{Graph-based:} MTGNN-style, GNN-Transformer
+    \item \textbf{(a) Full model (VMD-MFGNN)}: VMD decomposition into $K=5$ bands, with a separate learned graph per band.
+    \item \textbf{(b) No-VMD, raw price}: A genuine raw-price GAT+LSTM model with a single learned graph, using a dedicated raw-price dataloader that never touches VMD-decomposed input. This isolates the contribution of decomposition itself, independent of the per-band-graph question.
+    \item \textbf{(c) Pooled graph}: VMD decomposition retained, but the $K$ band representations are pooled into a single unified representation before a single graph is built over it, rather than building $K$ separate graphs. This is the ablation that most directly supports (or fails to support) the paper's central architectural claim against MBTI-Net-style pooling. \textbf{Caveat, stated explicitly here and not only in Limitations}: the pooled-graph variant has 13{,}450 trainable parameters versus 59{,}588 for the full model (77\% fewer) under matched base hyperparameters, because it processes one graph instead of $K$. Any accuracy delta between (a) and (c) is therefore confounded with model capacity, not attributable to graph structure alone; this table should not be read as isolating architecture from capacity.
+    \item \textbf{(d) Correlation graph}: The learned per-band adjacency is replaced with a fixed adjacency built from Pearson correlation between variables' band signals, thresholded at $|r|>0.3$. This isolates the contribution of end-to-end learned adjacency versus a fixed, precomputed graph, holding the per-band architecture fixed.
 \end{itemize}
 
-\subsection{Hyperparameters}
+\subsection{Statistical Testing}
 
-VMD: $K=5$ modes, $\alpha=2000$. Model: hidden dimension 64, 4 attention heads, 2 GNN layers, 2 LSTM layers, dropout 0.1. Training: batch size 32, Adam optimizer ($\text{lr}=10^{-3}$), cosine annealing, early stopping (patience 20), lookback window $L=60$ days.
+For the baseline comparison (VMD-MFGNN versus each of the six baselines, Section~\ref{sec:baselines}), we apply the Diebold-Mariano test \citep{DieboldMariano1995} to each pair of forecast error series, per horizon, testing whether VMD-MFGNN's forecast errors are significantly different from each baseline's. This test is applicable here because the same test-set forecasts, produced under the same single split, provide a valid paired sample of loss differentials over time. The DM test is \emph{not} applied to the ablation comparisons (Section~\ref{sec:ablation}): with only one train/validation/test split and no walk-forward folds or repeated seeds, there is no resampling unit across which to compute a paired test or an effect size such as Cohen's $d$ for the ablation variants, and we do not fabricate one.
 
 \subsection{Evaluation Metrics}
 
-RMSE, MAE, MAPE, $R^2$, and Directional Accuracy (DA). Statistical significance is assessed via the Diebold-Mariano test \citep{DieboldMariano1995}.
+RMSE, MAE, and Directional Accuracy (DA) are reported for the main comparison and the ablations, per horizon.
+
+\subsection{Implementation Details}
+\label{sec:impl}
+
+VMD-MFGNN and all baselines are implemented in PyTorch with PyTorch Geometric for the GAT layers. Default (pre-HPO) architecture hyperparameters are: hidden dimension 64, 4 attention heads, 2 GNN layers, 2 LSTM layers, dropout 0.1; training uses batch size 32, the Adam optimizer, and early stopping. Best-validation-loss checkpoint selection was used for all reported models, with model weights saved to disk so that training can resume from a checkpoint rather than restart from scratch.
 
 %% ============================================================
 \section{Results and Discussion}
 \label{sec:results}
 
+\textbf{Status.} As of this draft, Phase~2 (execution of the full training and evaluation pipeline on the real 2010--2025 data) has not yet been run. The tables below define the exact structure, metrics, and comparisons this paper reports, with every numeric cell marked \texttt{[PENDING PHASE 2 RESULTS]}. No numbers in this section are real, estimated, or illustrative; none should be cited or extracted from this draft.
+
 \subsection{Main Results}
 
-\textit{[Table~\ref{tab:main} presents the main results. Populate after running experiments.]}
+Table~\ref{tab:main} will report RMSE, MAE, and Directional Accuracy (DA) for VMD-MFGNN and the six baselines, across all four forecast horizons, on the test split (2022--2025).
 
 \begin{table}[ht]
 \centering
-\caption{Forecasting performance comparison across four horizons. Best results in \textbf{bold}.}
+\caption{Forecasting performance comparison across four horizons, test split (2022--2025). Best results per column to be shown in \textbf{bold} once populated. All cells pending Phase 2 execution.}
 \label{tab:main}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l cccc cccc cccc}
+\toprule
+& \multicolumn{4}{c}{RMSE} & \multicolumn{4}{c}{MAE} & \multicolumn{4}{c}{DA (\%)} \\
+\cmidrule(lr){2-5} \cmidrule(lr){6-9} \cmidrule(lr){10-13}
+Model & $h$=1 & $h$=5 & $h$=10 & $h$=22 & $h$=1 & $h$=5 & $h$=10 & $h$=22 & $h$=1 & $h$=5 & $h$=10 & $h$=22 \\
+\midrule
+ARIMA           & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+XGBoost         & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+LSTM            & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+Transformer     & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+VMD-LSTM        & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+SimpleMTGNN     & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+\midrule
+\textbf{VMD-MFGNN} & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{Statistical Significance versus Baselines}
+
+Table~\ref{tab:dm} will report the Diebold-Mariano statistic and $p$-value for VMD-MFGNN's forecast errors against each of the six baselines, per horizon (Section~\ref{sec:experiments}). This test is applied only to the baseline comparison, not to the ablation table (Table~\ref{tab:ablation}); see Section~\ref{sec:limitations}.
+
+\begin{table}[ht]
+\centering
+\caption{Diebold-Mariano test: VMD-MFGNN versus each baseline, per horizon. All cells pending Phase 2 execution.}
+\label{tab:dm}
 \begin{tabular}{l cccc cccc}
 \toprule
-& \multicolumn{4}{c}{RMSE ($\times 10^{-2}$)} & \multicolumn{4}{c}{DA (\%)} \\
+& \multicolumn{4}{c}{DM statistic} & \multicolumn{4}{c}{$p$-value} \\
 \cmidrule(lr){2-5} \cmidrule(lr){6-9}
-Model & $h$=1 & $h$=5 & $h$=10 & $h$=22 & $h$=1 & $h$=5 & $h$=10 & $h$=22 \\
+vs.\ Baseline & $h$=1 & $h$=5 & $h$=10 & $h$=22 & $h$=1 & $h$=5 & $h$=10 & $h$=22 \\
 \midrule
-ARIMA           & -- & -- & -- & -- & -- & -- & -- & -- \\
-XGBoost         & -- & -- & -- & -- & -- & -- & -- & -- \\
-LSTM            & -- & -- & -- & -- & -- & -- & -- & -- \\
-Transformer     & -- & -- & -- & -- & -- & -- & -- & -- \\
-VMD-LSTM        & -- & -- & -- & -- & -- & -- & -- & -- \\
-MTGNN-style     & -- & -- & -- & -- & -- & -- & -- & -- \\
-GNN-Transformer & -- & -- & -- & -- & -- & -- & -- & -- \\
-\midrule
-\textbf{VMD-MFGNN} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} \\
+ARIMA        & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+XGBoost      & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+LSTM         & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+Transformer  & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+VMD-LSTM     & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+SimpleMTGNN  & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{Ablation Study}
+\label{sec:ablation-results}
 
-To isolate the contribution of each component, we evaluate:
-\begin{itemize}
-    \item \textbf{No VMD}: GNN on raw prices with single learned graph (removes decomposition).
-    \item \textbf{Single graph}: VMD decomposition but one shared graph across all bands (removes frequency-specific graphs).
-    \item \textbf{Correlation graph}: VMD + per-band graphs, but using fixed correlation matrices instead of learned adjacency.
-    \item \textbf{No attention fusion}: Simple averaging instead of learned mode weights.
-    \item \textbf{Mode sensitivity}: $K \in \{3, 5, 7, 9\}$.
-\end{itemize}
-
-\textit{[Table~\ref{tab:ablation}: Populate after running experiments.]}
+Table~\ref{tab:ablation} will report RMSE, MAE, and DA per horizon for the four ablation variants defined in Section~\ref{sec:ablation}. No significance column is included: with a single chronological split and no walk-forward folds or repeated seeds, there is no resampling unit available to compute a paired test or effect size for these comparisons (Section~\ref{sec:limitations}).
 
 \begin{table}[ht]
 \centering
-\caption{Ablation study results (RMSE $\times 10^{-2}$, horizon $h=5$).}
+\caption{Ablation study results, all four horizons, test split. No significance column (single-split protocol; see Section~\ref{sec:limitations}). \textbf{The pooled-graph variant has 13,450 trainable parameters versus 59,588 for the full model (77\% fewer); any RMSE/MAE/DA delta between these two rows is confounded with capacity and should not be attributed to graph structure alone.} All cells pending Phase 2 execution.}
 \label{tab:ablation}
-\begin{tabular}{l cccc}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l cccc cccc cccc}
 \toprule
-Variant & RMSE & MAE & DA (\%) & $\Delta$ vs Full \\
+& \multicolumn{4}{c}{RMSE} & \multicolumn{4}{c}{MAE} & \multicolumn{4}{c}{DA (\%)} \\
+\cmidrule(lr){2-5} \cmidrule(lr){6-9} \cmidrule(lr){10-13}
+Variant & $h$=1 & $h$=5 & $h$=10 & $h$=22 & $h$=1 & $h$=5 & $h$=10 & $h$=22 & $h$=1 & $h$=5 & $h$=10 & $h$=22 \\
 \midrule
-Full model (VMD-MFGNN) & -- & -- & -- & -- \\
-No VMD (single graph)  & -- & -- & -- & -- \\
-Single graph (no multi-freq) & -- & -- & -- & -- \\
-Correlation graph      & -- & -- & -- & -- \\
+\textbf{(a) Full model (VMD-MFGNN)} & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+(b) No-VMD, raw price & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+(c) Pooled graph (13{,}450 params)$^\dagger$ & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
+(d) Correlation graph & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] & [PENDING PHASE 2 RESULTS] \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
+
+\vspace{0.3em}
+\footnotesize $^\dagger$Full model (a) has 59{,}588 trainable parameters versus 13{,}450 for variant (c) under matched base hyperparameters (77\% fewer) --- see Section~\ref{sec:complexity} and Section~\ref{sec:limitations}. Any delta between rows (a) and (c) reflects both graph structure and capacity, not graph structure alone.
 \end{table}
 
 \subsection{Interpretability Analysis}
 
 \subsubsection{Frequency-Specific Inter-Commodity Graphs}
 
-Figure~\ref{fig:graphs} visualizes the learned adjacency matrices $\mathbf{A}_k$ for each frequency band. At low frequencies (Band 1, long-term trend), we expect strong connections between copper, DXY, and oil---reflecting macroeconomic co-movement. At high frequencies (Band 5, daily noise), connections should be sparser, potentially highlighting short-term speculative linkages.
+Figure~\ref{fig:graphs} will visualize the learned adjacency matrices $\mathbf{A}_k$ for each frequency band, once Phase~2 training and interpretability-artifact generation (learned graphs and attention weights, saved per Section~\ref{sec:impl}) are complete. We hypothesize, but do not yet report as fact, that low-frequency bands may show stronger copper-DXY and copper-oil connections (macro co-movement) and high-frequency bands sparser, possibly noisier connections; this is a hypothesis to be checked against the actual learned graphs, not a result.
 
-\textit{[Include fig2\_frequency\_graphs.pdf after generating.]}
+\textit{[Include the frequency-graph figure after Phase 2 generates it.]}
 
 \subsubsection{Mode Importance}
 
-The attention weights reveal which frequency bands contribute most to prediction accuracy. We hypothesize that low-frequency modes dominate long-horizon forecasts ($h=22$), while mid-frequency modes are more important for short horizons ($h=1$).
+The fusion attention weights (Section~\ref{sec:method}) will reveal which frequency bands contribute most to prediction at each horizon, once training completes. Any claim about which bands dominate at which horizons is deferred until these weights are observed.
+
+%% ============================================================
+\section{Limitations}
+\label{sec:limitations}
+
+We enumerate the limitations of this study's design explicitly, rather than deferring them to a brief closing paragraph.
+
+\begin{enumerate}
+    \item \textbf{Zinc and nickel ticker substitution.} Zinc and nickel have no standalone Yahoo Finance futures ticker (they trade primarily on the LME). We substitute NASDAQ commodity sub-indices (\^{}NQCIZNER, \^{}NQCINIER) as the closest available Yahoo Finance proxies. These indices track zinc and nickel exposure but are not identical instruments to LME zinc/nickel futures, and any idiosyncratic index-construction effects in these proxies are a source of measurement error in the corresponding graph nodes.
+    \item \textbf{VMD refit cadence.} The expanding-window VMD decomposition is refit every 21 trading days, not daily, as a compute/accuracy tradeoff. Modes are carried forward between refits, meaning the decomposition used for prediction can lag the most recent data by up to 21 days within a refit window. A daily-refit variant was not evaluated within this project's timeline.
+    \item \textbf{Single chronological split; no walk-forward evaluation.} All results are computed on one train (2010--2019) / validation (2020--2021) / test (2022--2025) split, not a walk-forward or rolling-origin design with multiple folds. This limits the results to a single realization of test-period market conditions, and, combined with the absence of multiple seeds, means there is no resampling unit available to compute a paired significance test or effect size (e.g., Cohen's $d$) for the ablation comparisons (Table~\ref{tab:ablation}); only the baseline comparison (Table~\ref{tab:dm}) admits a valid Diebold-Mariano test, because it compares two forecast-error series over the same single test period rather than requiring resampling across folds or seeds.
+    \item \textbf{Asymmetric hyperparameter optimization.} VMD-MFGNN receives a 15-trial Optuna TPE search (Section~\ref{sec:hpo}); the six baselines do not and run at standard, hand-set configurations. This is a deliberate, disclosed choice made to fit the project's compute and time budget, not an oversight, but it means the baseline comparison (Table~\ref{tab:main}, Table~\ref{tab:dm}) compares a tuned model against untuned ones, and any accuracy gap is not solely attributable to architecture.
+    \item \textbf{Pooled-graph ablation parameter-count confound.} The pooled-graph ablation variant (Section~\ref{sec:ablation}) has 13{,}450 trainable parameters versus 59{,}588 for the full model (77\% fewer), because it processes a single graph rather than $K=5$. This is a direct consequence of pooling, not an independent design flaw, but it means Table~\ref{tab:ablation}'s comparison between the full model and the pooled-graph variant conflates graph structure with model capacity. A capacity-matched pooled variant was considered but not built within this project's timeline; the comparison as reported should be read with this caveat, not as a clean ablation of graph topology alone.
+    \item \textbf{Single-seed results.} All reported results, including ablations, come from a single training run per model/variant, not repeated across multiple random seeds. Seed-to-seed variance has not been characterized given the project timeline, and reported numbers should be read as point estimates rather than as characterizing a distribution.
+\end{enumerate}
 
 %% ============================================================
 \section{Conclusion}
 \label{sec:conclusion}
 
-We proposed VMD-MFGNN, the first framework to construct frequency-specific inter-commodity graphs from VMD-decomposed time series for copper price forecasting. Our approach addresses a confirmed gap in the literature: the intersection of signal decomposition and graph-based relational modeling for commodity markets. The framework provides both superior forecasting accuracy and interpretable, frequency-resolved commodity dependency structures that offer novel insights into multi-scale market dynamics.
+This paper poses three research questions (Section~\ref{sec:intro}); at the time of writing, Phase~2 execution (Section~\ref{sec:results}) has not yet produced results, so none of the three can yet be answered. We state here what each answer will require, so that the completed paper can be read as directly resolving them.
 
-Future work includes: (1) causal graph construction via Granger causality on decomposed modes, (2) regime-adaptive graph structures, (3) multivariate VMD for joint cross-channel decomposition, and (4) extension to other commodity markets.
+\textbf{RQ1} (per-band versus pooled graph) will be answered by comparing rows (a) and (c) of Table~\ref{tab:ablation}, subject to the parameter-count caveat in Section~\ref{sec:limitations}: because the pooled variant has 77\% fewer parameters, an RMSE/MAE/DA advantage for the full model is necessary but not sufficient evidence that per-band graph construction, specifically, is responsible, rather than capacity.
+
+\textbf{RQ2} (per-band graph versus no-VMD and versus a fixed correlation graph) will be answered by comparing row (a) against rows (b) and (d) of Table~\ref{tab:ablation}, which are not subject to the same capacity confound as the (a)-versus-(c) comparison, since (b) and (d) share the full model's per-band architecture and differ only in, respectively, the presence of VMD decomposition and the source of the adjacency matrix.
+
+\textbf{RQ3} (statistically significant edge over standard baselines) will be answered by Table~\ref{tab:dm}: a significant, favorable Diebold-Mariano result across horizons against the majority of the six baselines would support this claim, understood alongside the disclosed asymmetric-HPO caveat (Section~\ref{sec:limitations}) that VMD-MFGNN, unlike the baselines, was tuned.
+
+Independent of the outcome, the methodological contribution of this paper is the explicit isolation of the per-band-versus-pooled-graph question as a controlled ablation against the closest prior work (MBTI-Net), together with full disclosure of this study's protocol limitations (Section~\ref{sec:limitations})---a single chronological split, asymmetric tuning, a capacity-confounded ablation, and a data-availability substitution for two input variables---so that whatever the eventual numbers show, they can be interpreted correctly rather than overclaimed.
+
+Future work includes: (1) a capacity-matched pooled-graph variant to remove the confound noted in Section~\ref{sec:limitations}; (2) a walk-forward evaluation protocol with multiple folds, enabling paired significance testing on the ablations; (3) multi-seed replication; (4) symmetric hyperparameter optimization across all compared models, budget permitting; and (5) extension to other base-metal commodities to test whether the per-band graph advantage, if confirmed on copper, generalizes.
 
 %% ============================================================
 \section*{Data Availability}
 
-All data used in this study is publicly available. Copper and commodity futures prices are obtained from Yahoo Finance. Macroeconomic indicators are obtained from FRED (Federal Reserve Economic Data). Code is available at [repository URL].
+All data used in this study is publicly available via the Yahoo Finance API (tickers listed in Section~\ref{sec:experiments}). No FRED, BDI, TC/RC, or COT data are used. Code is available at [repository URL].
 
 \section*{CRediT Author Statement}
 
@@ -315,7 +387,7 @@ Hu, S., Tan, Z., Liu, H., Yin, J., 2023. Heterogeneous continual graph neural ne
 Li, X., Zhou, Y., Liu, Z., Ding, Y., 2023. CNN-LSTM multi-factor copper price prediction. IEEE Access.
 
 \bibitem[Li and Liu(2026)]{LiLiu2026}
-Li, Y., Liu, D., 2026. A hybrid model for copper futures price forecasting utilizing complexity-aware variational mode decomposition. Entropy.
+Li, Y., Liu, D., 2026. MBTI-Net: a hybrid model for copper futures price forecasting utilizing complexity-aware variational mode decomposition and graph neural networks. Entropy 28(3), 320.
 
 \bibitem[Liu et al.(2020)]{Liu2020}
 Liu, Y., Yang, C., Huang, K., Gui, W., 2020. Non-ferrous metals price forecasting based on variational mode decomposition and LSTM network. Knowledge-Based Systems 188, 105006.

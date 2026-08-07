@@ -8,3 +8,8 @@ results/interpretability/
 results/figures/*.png
 *.egg-info/
 .ipynb_checkpoints/
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
+paper/*.spl

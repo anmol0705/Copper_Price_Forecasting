@@ -1,0 +1,1344 @@
+%% CRML v5 — IEEE TNNLS Submission
+%% Cross-Relational Multi-Scale Learning with Hypergraph Neural Networks
+%% for Stock Return Prediction
+\documentclass[journal]{IEEEtran}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{cite}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{placeins}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, fit, backgrounds}
+
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.10}
+\renewcommand{\floatpagefraction}{0.85}
+\setcounter{topnumber}{4}
+\setcounter{bottomnumber}{4}
+\setcounter{totalnumber}{6}
+
+\makeatletter
+\newcommand{\DescState}[1]{%
+  \State \parbox[t]{\dimexpr\linewidth-\algorithmicindent}{#1\strut}}
+\makeatother
+
+\begin{document}
+
+\title{Cross-Relational Multi-Scale Learning with Hypergraph Neural Networks
+       for Stock Return Prediction}
+
+\author{\IEEEauthorblockN{Anmol Jain, Aditya Ranjan Patra, and Sibarama Panigrahi}
+\IEEEauthorblockA{Department of Computer Science and Engineering\\
+National Institute of Technology Rourkela, Odisha, India}}
+
+\IEEEtitleabstractindextext{%
+\begin{abstract}
+Cross-sectional stock return prediction is a ranking problem: the
+question is not whether the market rises, but which stocks outperform
+their peers. Existing graph-based methods encode inter-stock
+dependencies at a single structural scale, either through pairwise
+edges or fixed group memberships. This paper asks whether jointly
+modeling all three dominant relational scales in equity markets---static
+sector co-membership, dynamic similarity clustering, and directed
+pairwise lead-lag---can generate statistically significant cross-sectional
+signal under a minimal feature set; whether each scale contributes
+independently; and whether the resulting architecture transfers across
+equity markets with different microstructural characteristics. We
+propose CRML (Cross-Relational Multi-Scale Learning), which constructs
+three structures in parallel: a static GICS sector hypergraph, a dynamic
+dual-polarity KNN hypergraph connecting each stock to its $k$ most similar
+co-movers and $k$ least similar inverse movers through separate hyperedge
+channels, and a GATv2 pairwise attention graph. A gating layer fuses
+these with per-stock softmax weights recomputed on each forward pass.
+On the S\&P~100 with 12 technical features and a 5-day simple return
+target $r{=}(C_{t+5}/C_t){-}1$, evaluated over four held-out walk-forward
+test folds with hyperparameter search confined to earlier folds, CRML
+achieves mean daily IC~$=0.047$ (95\,\% bootstrap CI: $[0.016,\,0.077]$),
+against 0.020 for ridge regression. Ablation confirms independent
+contributions from each scale; sector hypergraph removal causes the
+largest degradation ($\Delta\mathrm{IC}{=}{-}0.012$, $p{=}0.053$).
+Replacing the training objective with the standard Qlib MSE-only
+protocol collapses IC by 84\,\%, showing that benchmark training recipes
+do not transfer to dual-head architectures. On the NIFTY~100, no
+statistically significant signal is found (IC~$=0.016$,
+CI $[-0.015,\,0.039]$), identifying structural conditions under which
+this class of architecture fails.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Graph Neural Networks, Hypergraph Learning, Stock Return Prediction,
+Quantitative Finance, Relational Learning, Deep Learning.
+\end{IEEEkeywords}}
+
+\maketitle
+\IEEEdisplaynontitleabstractindextext
+\IEEEpeerreviewmaketitle
+
+\section{Introduction}
+
+\IEEEPARstart{E}{quity} markets price hundreds of stocks simultaneously,
+and the return of any single stock on a given day is not determined in
+isolation. A regulatory change affecting semiconductor supply chains can
+move Apple, NVIDIA, and Broadcom within hours of each other---not because
+of any direct financial link between them, but because they share
+exposure to the same production bottleneck. A risk-off episode triggered
+by an unexpected inflation print compresses high-beta growth stocks
+across every sector simultaneously, while defensive utilities and
+consumer staples decouple from the broader selloff. When Microsoft
+reports earnings, smaller software peers re-rate in the same session as
+investors update their sector-wide expectations. These patterns are not
+noise. They reflect structural, economically motivated inter-stock
+dependencies that carry cross-sectional predictive
+signal~\cite{jegadeesh1993returns}---and any model treating stocks as
+independent time series discards that signal entirely.
+
+The prediction problem we study is cross-sectional: given the feature
+histories of $N$ stocks on day $t$, the goal is to rank the universe
+by expected forward return over the next five trading days. This differs
+from univariate forecasting in a concrete way. A model that predicts
+every stock will decline 2\,\% during a broad market selloff is a
+perfect time-series forecaster if the index drops exactly 2\,\%---yet
+it has zero cross-sectional utility. It cannot separate the stock that
+falls 5\,\% from the one that falls 0.5\,\%. Our evaluation metric is
+the Information Coefficient~(IC)~\cite{grinold2000active}, the Spearman
+rank correlation~\cite{spearman1904} between predicted and realized
+returns computed per trading day. Positive IC supports a long-short
+portfolio insulated from market beta~\cite{grinold2000active}.
+
+Graph neural networks have become the standard approach for encoding
+inter-stock dependencies~\cite{patel2024gnn}. Every recent architecture,
+however, commits to a single topological representation.
+RSR~\cite{feng2019temporal} and HATS~\cite{kim2019hats} use pairwise
+edges from static knowledge graphs. STHAN-SR~\cite{sawhney2021sthan}
+replaces these with a single sector-defined hypergraph.
+MASTER~\cite{li2024master} deploys full transformer attention over all
+stock-time pairs. HIST~\cite{xu2021hist}, the most expressive
+single-scale predecessor, combines a predefined industry concept graph
+with a learned hidden concept graph, but both modules remain at the
+group level and neither models directed pairwise effects. These
+architectures fix their relational mechanism at design time and apply
+it uniformly across all stocks and regimes.
+
+That constraint matters because the three dominant relational
+mechanisms in equity markets operate at different structural scales.
+Sector co-membership is stable: GICS classifications reflect durable
+economic realities~\cite{msci2023gics}, and sector co-movement persists
+across regimes~\cite{jegadeesh1993returns,gu2020empirical}. Dynamic
+similarity is transient: during a macro shock, unrelated stocks can
+lock into cross-sector correlations for days before decoupling.
+Pairwise lead-lag is directed: a megacap bellwether asymmetrically
+predicts a smaller peer's return, not the reverse. A static sector
+hypergraph cannot capture transient cross-sector clustering; a dynamic
+KNN graph discards directional asymmetry; a pairwise attention graph
+loses the unified group signal when an entire sector rotates. None
+subsumes the others.
+
+We introduce CRML, which constructs all three relational structures in
+parallel and combines them through learned, input-conditioned gates.
+Each stock's 60-day feature history is compressed by a shared GRU
+encoder~\cite{cho2014learning}. The embeddings feed simultaneously into
+a static GICS sector hypergraph via HGNN
+convolution~\cite{feng2019hypergraph}, a dynamic dual-polarity KNN
+hypergraph connecting each stock to its $k$ most similar co-movers and
+$k$ least similar inverse movers through separate hyperedge channels
+rebuilt on every forward pass, and a sparse GATv2 pairwise attention
+graph~\cite{brody2022attentive}. An input-conditioned gating layer
+computes per-stock, per-day softmax weights over the three outputs. The
+architecture is evaluated on the S\&P~100~(US) and NIFTY~100~(India)
+under a strict walk-forward protocol~\cite{lopezdeprado2018advances}
+that separates hyperparameter optimization from testing.
+
+This paper addresses three research questions.
+\textbf{RQ1:} Can jointly modeling sector co-membership, dynamic
+similarity clustering, and directed pairwise attention generate a
+statistically significant cross-sectional signal on a highly efficient
+large-cap equity universe with a minimal technical feature set?
+\textbf{RQ2:} Does each relational scale contribute independently to
+predictive performance, or does performance derive primarily from one
+dominant module?
+\textbf{RQ3:} Does the architecture transfer across markets with
+different microstructural characteristics, or does its effectiveness
+depend on specific conditions of sector diversity and market efficiency?
+
+The contributions of this work are as follows:
+\begin{enumerate}
+\item \textbf{Three-scale parallel relational architecture.} CRML
+jointly constructs static group, dynamic group, and directed pairwise
+topologies in a single forward pass---a combination absent from prior
+work.
+
+\item \textbf{Dual-polarity dynamic hypergraph.} The KNN module builds
+separate co-mover and inverse-mover hyperedge channels per forward pass,
+allowing the model to learn distinct aggregation functions for momentum
+spillover and mean-reversion simultaneously.
+
+\item \textbf{Stock-specific gated fusion.} A gating mechanism computes
+dynamic routing weights conditioned on current embeddings, replacing
+fixed blending with a learned, per-stock, per-day fusion.
+
+\item \textbf{Rigorous walk-forward evaluation.} Hyperparameter
+optimization is confined to folds~1--3; folds~4--7 are withheld
+entirely, eliminating the forward-looking bias present in the fixed
+train/val/test splits used by MASTER~\cite{li2024master} and
+StockMixer~\cite{fan2024stockmixer}.
+
+\item \textbf{Cross-market boundary identification.} A positive result
+on the S\&P~100 alongside a null result on the NIFTY~100 identifies the
+structural conditions under which multi-scale relational learning does
+and does not generate detectable alpha.
+\end{enumerate}
+
+The rest of this paper is organized as follows. Section~II surveys
+related work. Section~III presents the architecture and evaluation
+protocol. Section~IV reports results. Section~V provides direct answers
+to the three research questions and concludes.
+
+\section{Related Work}
+
+\subsection{Traditional Machine Learning for Stock Forecasting}
+
+Early quantitative methods applied linear regression and support vector
+regression to engineered price features~\cite{gu2020empirical}. These
+models are interpretable but structurally limited: they treat each stock
+as an independent observation and carry no mechanism for encoding the
+co-movement patterns that distinguish equity markets from isolated time
+series. Jegadeesh and Titman documented that cross-sectional momentum
+persists across multi-month horizons in US markets~\cite{jegadeesh1993returns},
+providing the empirical basis for the momentum features used in our
+feature set. Grinold and Kahn formalized the IC as the appropriate
+measure of cross-sectional predictive power, distinguishing the ranking
+problem from scalar return forecasting~\cite{grinold2000active}. Later
+work by Gu et al.\ showed that non-linear machine learning methods
+substantially outperform linear baselines on US equity cross-sections by
+capturing feature interaction effects~\cite{gu2020empirical}. The shared
+limitation across all these methods is that they process each stock
+independently: two stocks in the same sector, with the same supply chain
+exposure, are modeled as if they share no information.
+
+\subsection{Deep Learning for Sequential Return Prediction}
+
+Recurrent architectures replaced hand-crafted temporal features with
+learned representations. The Long Short-Term
+Memory~\cite{hochreiter1997long} became the default sequential baseline;
+its gating mechanism selectively retains trend information across
+variable horizons. The Gated Recurrent Unit~\cite{cho2014learning}
+achieved similar empirical performance with fewer parameters. Neither
+model shares information across stocks during encoding.
+
+The Attention LSTM (ALSTM)~\cite{qin2017dual} added a soft attention
+layer over hidden states, improving IC on Qlib benchmarks relative to
+vanilla LSTM, but the attention operates within a single stock's
+sequence. The State Frequency Memory (SFM)~\cite{zhang2017stock}
+decomposed hidden states into frequency components via a Discrete
+Fourier Transform formulation, jointly capturing short- and long-term
+trading patterns. Both SFM and ALSTM apply independently per stock
+with no cross-sectional routing. Transformer
+encoders~\cite{vaswani2017attention} extended temporal context through
+self-attention, but applied stock-by-stock they still propagate no
+cross-sectional information. Cross-stock attention, as used in MASTER,
+addresses this at the cost of conflating structurally distinct relational
+mechanisms.
+
+\subsection{Graph Neural Networks for Stock Prediction}
+
+Kipf and Welling established GCN as a scalable approach to learning node
+representations incorporating neighborhood
+information~\cite{kipf2017semi}. The natural application to stocks
+treats each asset as a node and encodes known relationships as edges.
+
+RSR~\cite{feng2019temporal} combined LSTM encoders with Temporal Graph
+Convolution over a static knowledge graph of sector and supply chain
+relations, demonstrating measurable improvement over independent LSTM on
+NYSE and NASDAQ data. HATS~\cite{kim2019hats} extended this with
+heterogeneous relation types from Wikidata and hierarchical attention to
+select among them, outperforming GCN and TGC baselines on S\&P~500 data
+from 2013 to 2019. Both share the same structural constraint: the
+topology is built once and frozen.
+
+TRA~\cite{lin2021learning} addressed within-universe return
+heterogeneity by routing each sample to specialized prediction heads,
+showing that stocks with different return dynamics benefit from distinct
+model components. DoubleAdapt~\cite{zhao2023doubleadapt} addressed
+distribution shift through meta-learned data and model adapters,
+reaching strong performance on CSI~300 and CSI~500 under an incremental
+learning protocol. Its contribution is adaptation rather than relational
+structure: the base encoder still processes stocks independently.
+
+MASTER~\cite{li2024master} bypassed predefined graph construction by
+modeling stock correlations through alternating intra- and inter-stock
+transformer layers, reaching IC~$=0.059$ on CSI~300. The limitation is
+that fully attentive inter-stock aggregation assigns no structural
+meaning to the connection weights: sector co-movement and lead-lag
+signals receive identical architectural treatment. StockMixer~\cite{fan2024stockmixer}
+took the opposing position---a three-stage MLP mixer across indicators,
+time steps, and stocks matches MASTER on IC at substantially lower
+cost---but the stock-mixing stage is a learned global linear
+transformation, not a structured topology.
+
+\subsection{Hypergraph Learning for Stock Prediction}
+
+Encoding a sector of $k$ stocks as a pairwise graph requires
+$\binom{k}{2}$ edges and discards the group structure.
+HGNN~\cite{feng2019hypergraph} showed that propagating node features
+through a hyperedge and back in a single operation preserves
+higher-order co-membership that pairwise decomposition cannot recover.
+
+STHAN-SR~\cite{sawhney2021sthan} applied this to stock selection,
+constructing hyperedges from sector memberships and corporate relations.
+On NASDAQ over six years, STHAN-SR outperformed RSR-I (Sharpe 1.42
+vs.\ 1.34). The hyperedges are static, however, and cannot capture
+transient cross-sector groupings that arise during macro-driven events.
+
+HIST~\cite{xu2021hist} added a hidden concept module that discovers
+latent shared factors, achieving IC~$=0.048$ on CSI~300. Both HIST
+modules operate at the group level, neither reconstructs the topology
+per forward pass from current embeddings, and neither models asymmetric
+pairwise effects.
+
+\subsection{Multi-Scale and Multi-Relational Learning}
+
+R-GCN~\cite{schlichtkrull2018modeling} established that type-specific
+transformation matrices for different edge types in knowledge graphs
+improve over single-relation GCN, confirming that distinct relational
+semantics benefit from distinct aggregation functions. In the financial
+domain, STHGNN~\cite{xiang2022temporal} combined corporate relations,
+price co-movement, and temporal dependencies in a heterogeneous graph,
+outperforming homogeneous baselines---but all relation types remained
+encoded as edge attributes within a single pairwise graph, leaving
+hyperedge-level group structure unmodeled.
+
+Surveys by Patel et al.~\cite{patel2024gnn} and Zhang
+et al.~\cite{zhang2024neural} both identify simultaneous multi-scale
+topology construction as an open problem. No prior architecture jointly
+builds a static group hypergraph, a dynamic dual-polarity group
+hypergraph, and a directed pairwise attention graph, nor fuses them
+through a learned per-stock gating mechanism. CRML addresses this gap
+directly.
+
+\section{Methodology}
+
+\subsection{Problem Formulation}
+
+Let $\mathcal{U}=\{s_1,s_2,\dots,s_N\}$ denote the stock universe,
+where $N=100$ for the S\&P~100 and $N=91$ for the NIFTY~100. At each
+trading day $t$, stock $s_i$ has feature matrix
+$\mathbf{X}_i\in\mathbb{R}^{T\times F}$, where $T=60$ is the lookback
+window and $F=12$ is the feature count. The cross-sectional input
+tensor is $\mathbf{X}\in\mathbb{R}^{N\times T\times F}$. A macro
+context tensor $\mathbf{M}\in\mathbb{R}^{T\times 7}$ encodes seven
+market-level indicators over the same window.
+
+The prediction target is the 5-day simple return:
+\begin{equation}
+  y_i^t = \frac{C_{t+5}}{C_t} - 1
+  \label{eq:target}
+\end{equation}
+where $C_t$ is the closing price on the last day of the input window.
+A one-day safety gap is enforced: the first return contributing to
+$y_i^t$ is $C_{t+1}/C_t$, and the five consecutive log returns
+telescope to $\ln(C_{t+5}/C_t)$, which exponentiates to
+$(C_{t+5}/C_t)-1$. IC and Rank\,IC metrics are scale-invariant and
+computed on unscaled returns; the reported IC of 0.047 is unaffected
+by the loss-level scaling described in Section~\ref{sec:loss}.
+
+The model produces a magnitude prediction $\hat{y}_i\in\mathbb{R}$ and
+a direction prediction $\hat{d}_i\in[0,1]$. The primary metric is the
+cross-sectional IC~\cite{grinold2000active} via Spearman rank
+correlation~\cite{spearman1904}:
+\begin{equation}
+  \mathrm{IC}_t = \mathrm{SpearmanCorr}\!\left(
+                   \hat{\mathbf{y}}^t,\,\mathbf{y}^t\right)
+  \label{eq:ic}
+\end{equation}
+Mean IC across all test days measures average cross-sectional ranking
+ability independent of market direction~\cite{grinold2000active}.
+
+\subsection{Feature Engineering}
+
+\textbf{Stock-level features.} Each stock has 12 technical features per
+day (Table~\ref{tab:features}). Momentum features~\cite{jegadeesh1993returns}
+capture return persistence at 5-, 10-, and 20-day horizons. The RSI is
+per Wilder~\cite{wilder1978rsi} and normalized to $[0,1]$. MACD follows
+Appel~\cite{appel2005technical}, Bollinger Band position follows
+Bollinger~\cite{bollinger2001bands}, and the normalized ATR is also
+from Wilder~\cite{wilder1978rsi}. All features use only past data, with
+a one-day shift on all rolling statistics to eliminate look-ahead bias.
+Feature values are cross-sectionally z-scored per day---a standard
+technique for removing market beta from factor
+signals~\cite{kakushadze2020101}. Missing values are forward-filled up
+to five days; longer gaps are zero-filled.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Stock-Level Features (Cross-Sectionally Z-Scored Daily)}
+\label{tab:features}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llcl}
+\toprule
+\textbf{Feature} & \textbf{Definition} & \textbf{Window} & \textbf{Type}\\
+\midrule
+\texttt{log\_ret}      & $\ln(c_t/c_{t-1})$                          & 1\,d     & Price\\
+\texttt{volatility}    & Rolling std of log returns                  & 20\,d    & Risk\\
+\texttt{rsi\_norm}     & Normalized RSI $\in[0,1]$~\cite{wilder1978rsi} & 14\,d & Momentum\\
+\texttt{mom\_5}        & $(c_t/c_{t-5})-1$~\cite{jegadeesh1993returns}  & 5\,d  & Momentum\\
+\texttt{mom\_10}       & $(c_t/c_{t-10})-1$                          & 10\,d    & Momentum\\
+\texttt{mom\_20}       & $(c_t/c_{t-20})-1$                          & 20\,d    & Momentum\\
+\texttt{vol\_surprise} & $v_t/\mathrm{EWM}(v,\mathrm{span}{=}20)$   & 20\,d    & Volume\\
+\texttt{ma\_dist\_20}  & $(c-\mathrm{MA}_{20})/\mathrm{MA}_{20}$    & 20\,d    & Trend\\
+\texttt{ma\_dist\_50}  & $(c-\mathrm{MA}_{50})/\mathrm{MA}_{50}$    & 50\,d    & Trend\\
+\texttt{macd}          & $\mathrm{EMA}_{12}-\mathrm{EMA}_{26}$~\cite{appel2005technical} & 12/26\,d & Trend\\
+\texttt{bb\_position}  & $(c-L)/(U-L)$~\cite{bollinger2001bands}     & 20\,d    & Volatility\\
+\texttt{atr\_norm}     & $\mathrm{ATR}_{14}/c$~\cite{wilder1978rsi}  & 14\,d    & Risk\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{Macro features.} Seven market-level indicators per market
+capture systemic macroeconomic risk factors~\cite{chen1986economic}.
+For the US: CBOE VIX~\cite{whaley2000vix}, S\&P~500 index, 10-year
+Treasury yield, US Dollar Index, gold futures, crude oil futures, and
+Nasdaq~100. For India: India~VIX, NIFTY~50, Bank~NIFTY, USD/INR
+exchange rate, gold futures, crude oil futures, and the 10-year US
+Treasury yield. Table~\ref{tab:macro} lists each indicator with its
+economic rationale. Macro series are z-scored over a rolling 60-day
+window with the same one-day shift.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Macro-Economic Context Indicators (7 per Market)}
+\label{tab:macro}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llll}
+\toprule
+\textbf{Indicator} & \textbf{US Ticker} & \textbf{India Ticker}
+  & \textbf{Economic Rationale}\\
+\midrule
+Equity volatility index
+  & \texttt{\^{}VIX} & \texttt{\^{}INDIAVIX}
+  & Implied market fear; spikes precede broad drawdowns~\cite{whaley2000vix}\\
+Broad market index
+  & \texttt{\^{}GSPC} & \texttt{\^{}NSEI}
+  & Overall market beta and trend regime\\
+Sector benchmark
+  & \texttt{\^{}NDX} & \texttt{\^{}NSEBANK}
+  & Growth/tech proxy (US); financial-sector proxy (India)\\
+Sovereign yield
+  & \texttt{\^{}TNX} & \texttt{\^{}TNX}
+  & Risk-free rate; rising yields compress equity multiples\\
+Currency index
+  & \texttt{DX-Y.NYB} & \texttt{USDINR=X}
+  & Dollar strength affects multinational earnings;
+    INR/USD reflects FII flow pressure\\
+Gold futures
+  & \texttt{GC=F} & \texttt{GC=F}
+  & Safe-haven demand; inversely correlated with risk appetite\\
+Crude oil futures
+  & \texttt{CL=F} & \texttt{CL=F}
+  & Input cost for energy-intensive sectors; inflation signal\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{Target construction.} The target $y_i^t=(C_{t+5}/C_t)-1$ is
+computed on close-to-close prices with the one-day gap. All ranking
+metrics (IC, Rank\,IC, Sharpe, hit rate) use unscaled decimal returns.
+RMSE and MAE are in natural return units.
+
+\begin{figure*}[!t]
+\centering
+\input{architecture.tex}
+\caption{The CRML architecture. Each stock's 60-day feature tensor
+$\mathbf{X}\in\mathbb{R}^{N\times60\times12}$ is compressed by a shared
+GRU encoder into temporal embeddings $\mathbf{H}\in\mathbb{R}^{N\times d}$.
+Three parallel modules construct a static GICS sector hypergraph
+($\mathbf{H}_\mathrm{sec}$), a dynamic dual-polarity KNN hypergraph rebuilt
+each forward pass ($\mathbf{H}_\mathrm{knn}$), and a sparse GATv2 pairwise
+attention graph ($\mathbf{H}_\mathrm{gat}$). A gating layer produces
+per-stock softmax weights and computes the fused embedding $\mathbf{h}_i^*$.
+Two independent heads optimize magnitude (regression) and direction
+(classification) via a four-component loss.}
+\label{fig:architecture}
+\end{figure*}
+
+\subsection{GRU Temporal Encoder}
+
+A single-layer GRU~\cite{cho2014learning} compresses each stock's
+feature sequence into a final hidden state $\mathbf{h}_i\in\mathbb{R}^{d}$,
+where $d$ is set by HPO (Table~\ref{tab:hpo}). At $T=60$ and $F=12$,
+sequences are short enough that GRU's streamlined gating captures the
+relevant temporal dependencies without the full cell state of an
+LSTM~\cite{chung2014empirical}. Deploying independent self-attention
+encoders per stock would add an $\mathcal{O}(T^2)$ bottleneck for each
+of $N$ stocks per forward pass~\cite{vaswani2017attention}---unjustified
+at this sequence length. All $N$ hidden states are stacked into
+$\mathbf{H}\in\mathbb{R}^{N\times d}$.
+
+\subsection{Three Parallel Relational Modules}
+
+Each module takes $\mathbf{H}$ as input, constructs a distinct relational
+structure, and returns an updated embedding matrix of shape
+$\mathbb{R}^{N\times d}$.
+
+\subsubsection{Static Sector Hypergraph}
+
+Stocks are grouped by their Global Industry Classification Standard
+sector~\cite{msci2023gics}. Each sector forms a hyperedge connecting
+all member stocks, so the entire sector responds jointly to shared
+fundamental drivers: regulatory shifts, commodity input costs, interest
+rate sensitivity. Encoding a sector of $k$ stocks as a pairwise clique
+requires $\binom{k}{2}$ edges; a single hyperedge replaces all of them.
+
+The incidence matrix $\mathbf{H}_s\in\{0,1\}^{N\times S}$ has
+$\mathbf{H}_s[i,j]=1$ if stock $i$ belongs to sector $j$. Sector labels
+were obtained from Yahoo Finance at the time of data download and
+reflect current GICS classifications; historical reclassifications are
+not accounted for. Message passing follows HGNN~\cite{feng2019hypergraph}:
+\begin{equation}
+  \mathbf{X}' = \mathbf{D}_v^{-1/2}\,\mathbf{H}_s\,\mathbf{W}\,
+                \mathbf{D}_e^{-1}\,\mathbf{H}_s^\top\,
+                \mathbf{D}_v^{-1/2}\,\mathbf{X}\,\boldsymbol{\Theta}
+  \label{eq:hgnn_static}
+\end{equation}
+where $\mathbf{D}_v$ and $\mathbf{D}_e$ are diagonal degree matrices,
+$\mathbf{W}=\mathbf{I}_S$, and
+$\boldsymbol{\Theta}\in\mathbb{R}^{d\times d}$ is a learnable
+projection. Two layers are stacked with ReLU and dropout ($p=0.30$)
+between them. The topology is frozen; sector assignments do not change
+per forward pass.
+
+\subsubsection{Dynamic Dual-Polarity KNN Hypergraph}
+
+Empirical correlation structures shift with market conditions. Stocks
+that co-move during a macro-driven selloff may decorrelate entirely
+during a sector rotation days later. To capture this, the KNN
+hypergraph is rebuilt from scratch on every forward
+pass~\cite{wang2019dynamic}.
+
+GRU embeddings are first passed through a learned linear layer and
+$\ell_2$-normalized, then used to compute pairwise cosine similarity:
+\begin{equation}
+  \tilde{\mathbf{h}}_i = \frac{\mathbf{W}_{\mathrm{proj}}\mathbf{h}_i}
+    {\|\mathbf{W}_{\mathrm{proj}}\mathbf{h}_i\|},\qquad
+  \mathbf{S}[i,j] = \tilde{\mathbf{h}}_i^\top\tilde{\mathbf{h}}_j
+  \label{eq:cosine_sim}
+\end{equation}
+where $\mathbf{W}_{\mathrm{proj}}$ is learnable. A separate projection
+lets the model tune the similarity metric for the relational task
+without disturbing the temporal encoding.
+
+For each stock $i$, two hyperedge sets are built. A \textit{positive
+hyperedge} connects $i$ to its $k$ most similar stocks, capturing
+momentum spillover and co-movement~\cite{jegadeesh1993returns}. A
+\textit{negative hyperedge} connects $i$ to its $k$ least similar
+stocks, capturing mean-reversion and divergence. Negative hyperedge
+indices are offset by $N$ so the HGNN can learn a distinct aggregation
+function for each polarity. Every stock also has a self-loop. The
+dual-polarity incidence matrix $\mathbf{H}_k\in\{0,1\}^{N\times3N}$
+is rebuilt every forward pass; message passing follows
+Eq.~(\ref{eq:hgnn_static}) with $\mathbf{H}_k$ in place of
+$\mathbf{H}_s$. The HPO-selected value $k=20$ yields $3N$ hyperedges
+per pass ($N$ positive, $N$ negative, $N$ self-loops). Values below~5
+produce degenerate isolated cliques; values above~20 over-smooth the
+co-mover hyperedges toward a fully connected state and collapse the
+inverse-mover hyperedges toward near-random pairings.
+
+\subsubsection{Pairwise GATv2}
+
+The hypergraph modules perform symmetric group aggregation, which
+cannot represent directed influence: a large-cap bellwether predicts
+its supply chain's returns, but the reverse does not hold in general.
+The GATv2 module models these directed, asymmetric dependencies.
+
+From $\mathbf{S}$, the top $K=10$ edges per node form a sparse
+directed graph. GATv2Conv~\cite{brody2022attentive} with two attention
+heads is applied:
+\begin{equation}
+  \alpha_{ij} = \mathrm{softmax}_j\!\left(
+    \mathbf{a}^\top\,\mathrm{LeakyReLU}\!\left(
+      \mathbf{W}[\mathbf{h}_i\parallel\mathbf{h}_j]\right)\right)
+  \label{eq:gatv2}
+\end{equation}
+GATv2 is used instead of GAT~v1~\cite{velickovic2018graph} because
+v1's static attention cannot distinguish neighbors based on the query
+node's current state~\cite{brody2022attentive}. Two GATv2 layers are
+applied; the first concatenates heads to $2d$ and the second averages
+back to $d$. The output $\mathbf{H}_{\mathrm{gat}}\in\mathbb{R}^{N\times d}$
+encodes directed pairwise attention weights.
+
+\subsection{Gated Fusion}
+
+The three outputs are combined through an input-conditioned gate rather
+than fixed concatenation, which would impose a static blending ratio
+across all stocks and regimes. For each stock $i$:
+\begin{align}
+  \mathbf{z}_i &= [\mathbf{h}_{\mathrm{sec},i}\parallel
+                   \mathbf{h}_{\mathrm{knn},i}\parallel
+                   \mathbf{h}_{\mathrm{gat},i}]\in\mathbb{R}^{3d}
+                   \label{eq:concat}\\
+  \mathbf{w}_i &= \mathrm{softmax}(\mathbf{W}_g\mathbf{z}_i +
+                   \mathbf{b}_g)\in\mathbb{R}^3
+                   \label{eq:gate_weights}\\
+  \mathbf{h}_i^* &= \textstyle\sum_c w_{i,c}\,\mathbf{h}_{c,i}
+                   \in\mathbb{R}^{d}
+                   \label{eq:fuse}
+\end{align}
+where $\mathbf{W}_g\in\mathbb{R}^{3\times3d}$ and
+$\mathbf{b}_g\in\mathbb{R}^3$ are shared across all stocks. Gate
+weights are recomputed on every forward pass, making them stock-specific
+and state-dependent. Over the S\&P~100 evaluation period, the optimizer
+converges to a near-uniform equilibrium
+($\mathbf{w}_i\approx[0.333,0.333,0.333]$), discussed in
+Section~\ref{sec:ablation}.
+
+\subsection{Prediction Heads}
+
+The fused embedding $\mathbf{h}_i^*$ feeds two independent networks:
+\begin{itemize}
+  \item \textbf{Magnitude head:} $\mathbb{R}^d\to\mathbb{R}^{64}\to
+    \mathrm{ReLU}\to\mathrm{Dropout}(p)\to\mathbb{R}^1$,
+    producing $\hat{y}_i$.
+  \item \textbf{Direction head:} same structure with a sigmoid output,
+    producing $\hat{d}_i\in[0,1]$.
+\end{itemize}
+The direction head is an auxiliary regularizer~\cite{caruana1997multitask}.
+Requiring $\mathbf{h}_i^*$ to solve a simultaneous binary
+classification problem constrains the embedding to encode directional
+boundaries, stabilizing gradient flow and reducing sensitivity to
+return outliers. All reported ranking metrics use only $\hat{y}_i$.
+
+\subsection{Multi-Component Loss Function}
+\label{sec:loss}
+
+\begin{equation}
+  \mathcal{L} = w_{\mathrm{IC}}\mathcal{L}_{\mathrm{IC}}
+              + w_{\mathrm{MSE}}\mathcal{L}_{\mathrm{MSE}}
+              + w_{\mathrm{Rank}}\mathcal{L}_{\mathrm{Rank}}
+              + w_{\mathrm{BCE}}\mathcal{L}_{\mathrm{BCE}}
+  \label{eq:total_loss}
+\end{equation}
+
+\textbf{IC loss} ($w_{\mathrm{IC}}=0.31$): negative Pearson
+correlation~\cite{pearson1895notes} between predicted and actual returns
+in the batch---a differentiable proxy directly aligned with the IC
+evaluation metric:
+\begin{equation}
+  \mathcal{L}_{\mathrm{IC}} = -\frac{
+    \sum_i(\hat{y}_i-\bar{\hat{y}})(y_i-\bar{y})}{
+    \sqrt{\sum_i(\hat{y}_i-\bar{\hat{y}})^2\cdot
+          \sum_i(y_i-\bar{y})^2}}
+  \label{eq:loss_ic}
+\end{equation}
+
+\textbf{MSE loss} ($w_{\mathrm{MSE}}=0.49$): mean squared error between
+$\hat{y}_i$ and the target return scaled by~100. This scaling is applied
+only inside the MSE component to condition gradients during early
+training and does not affect the IC, Rank, or BCE components. Without
+MSE, pure IC optimization collapses into a rank-only solution that
+ignores return magnitude. The dominance of $w_{\mathrm{MSE}}$ over
+$w_{\mathrm{IC}}$ also prevents gradient explosions when the denominator
+of Eq.~(\ref{eq:loss_ic}) approaches zero in early training.
+
+\textbf{Pairwise ranking loss} ($w_{\mathrm{Rank}}=0.10$): a
+margin-based penalty from the learning-to-rank
+paradigm~\cite{burges2005learning}. For all pairs $(i,j)$ with
+$y_i>y_j$, it penalizes $\hat{y}_i\le\hat{y}_j$:
+\begin{equation}
+  \mathcal{L}_{\mathrm{Rank}} = \frac{1}{|\mathcal{P}|}
+    \sum_{(i,j)\in\mathcal{P}}
+    \max\!\left(0,\,-(\hat{y}_i-\hat{y}_j)
+    \cdot\mathrm{sign}(y_i-y_j)+m\right)
+  \label{eq:loss_rank}
+\end{equation}
+where $\mathcal{P}$ is all pairs with $y_i\ne y_j$ and $m$ is the
+margin.
+
+\textbf{Binary cross-entropy} ($w_{\mathrm{BCE}}=0.10$): cross-entropy
+between $\hat{d}_i$ and $\mathbf{1}[y_i>0]$, acting as a representation
+regularizer for the direction head. The empirical consequences of
+replacing this objective with the standard Qlib protocol are quantified
+in Section~\ref{sec:protocol}.
+
+\subsection{Walk-Forward Evaluation Protocol}
+
+Standard evaluation in graph-based stock prediction frequently inflates
+IC through hyperparameter leakage~\cite{lopezdeprado2018advances}. We
+eliminate this with strict chronological separation.
+
+\textbf{Expanding folds.} Seven folds are constructed. The initial
+training window is 500~trading days; each fold advances the test window
+by 125~days ($\approx$six months). A 60-day embargo buffer separates
+training from test to prevent sequence overlap.
+
+\begin{figure}[!t]
+\centering
+\resizebox{\columnwidth}{!}{\input{timeline}}
+\caption{Expanding walk-forward evaluation protocol. A 60-day embargo
+buffer separates all training and test windows. Folds~1--3~(blue) are
+reserved for hyperparameter optimization; folds~4--7~(teal) are
+withheld until HPO concludes.}
+\label{fig:walkforward}
+\end{figure}
+
+\textbf{HPO/test separation.} Folds~1--3 are reserved exclusively for
+Optuna TPE hyperparameter optimization (50~trials). Folds~4--7 are
+embargoed until HPO concludes. No parametric decision uses fold~4--7
+data. This eliminates the forward-looking bias in the fixed splits used
+by MASTER and StockMixer, where hyperparameter selection implicitly
+optimizes against the reported test period.
+
+\textbf{Per-day IC.} We compute IC per trading day (Eq.~\ref{eq:ic})
+and report the mean and standard deviation over folds~4--7. Pooled
+IC---computed by stacking all predictions across days---conflates
+cross-sectional ranking ability with time-series regime
+effects~\cite{grinold2000active} and is not reported.
+
+\textbf{Bootstrap CIs.} 95\,\% confidence intervals are from
+10\,000 resamples with replacement~\cite{efron1994introduction}.
+The US CI of $[0.016,\,0.077]$ lies entirely above zero.
+
+\subsection{Expressivity Analysis}
+
+Standard message-passing neural networks are bounded by the 1-WL graph
+isomorphism test~\cite{xu2019how}: neighborhoods that 1-WL cannot
+distinguish receive identical embeddings regardless of network depth.
+Hypergraph networks on hyperedges of size $>2$ are strictly more
+expressive because group-level aggregation distinguishes configurations
+that pairwise message-passing conflates~\cite{feng2019hypergraph}.
+
+\smallskip
+\noindent\textbf{Proposition~1 (Expressivity Separation).}
+\textit{Let $\mathcal{F}_{\mathrm{single}}^A$ be the function class of
+single-scale variant
+$A\in\{\mathrm{Static\text{-}SecHG},\,\mathrm{KNN\text{-}HG},\,
+\mathrm{Pairwise\text{-}GAT}\}$, and let $\mathcal{F}_{\mathrm{multi}}$
+be the function class of CRML. Then
+$\mathcal{F}_{\mathrm{single}}^A\subsetneq\mathcal{F}_{\mathrm{multi}}$
+for each $A$.}
+
+\smallskip
+\noindent\textit{Justification.} Subsumption holds because CRML reduces
+to any single-scale variant by routing gate weights to a one-hot vector.
+For strict inclusion, consider six stocks across two sectors where a
+macro shock pushes cross-sector cosine similarity above intra-sector
+similarity. A ranking function requiring sector-level group aggregation,
+dynamic cross-sector similarity, and directed pairwise asymmetry
+simultaneously cannot be realized by any single variant: Static-SecHG
+cannot capture transient cross-sector grouping; KNN-HG cannot recover
+permanent sector structure when cross-sector similarity dominates;
+Pairwise-GAT cannot distinguish a group hyperedge from a star graph
+when intra-sector embeddings are equal. CRML computes all three jointly.
+Empirical support is in Section~\ref{sec:ablation}.
+
+\smallskip
+\noindent\textbf{Remark.} The empirical gate equilibrium (0.333 per
+module) is an optimization outcome, not an expressivity failure. The
+three scales contribute roughly equal average information on S\&P~100
+large caps; the optimizer finds no incentive to break symmetry.
+Regime-dependent specialization may emerge under longer training windows
+or richer feature sets.
+
+\subsection{Complexity Analysis}
+
+Total forward-pass complexity is $\mathcal{O}(NTd^2+N^2d+Nd^2+NKd)$.
+The bottleneck is the GRU encoder at $\mathcal{O}(NTd^2)$; the
+relational modules together contribute $\mathcal{O}(Nd^2)$, cheaper by
+a factor of $T=60$. For $N=100$, $d=256$, a single-day forward pass
+completes in milliseconds on a Tesla~T4.
+MASTER~\cite{li2024master} computes full attention over all
+$N\!\times\!T$ tokens at $\mathcal{O}(N^2T^2d)$; CRML's sparse routing
+reduces the spatial term to $\mathcal{O}(N^2)$. Total parameters remain
+under~500K.
+
+% \FloatBarrier
+\input{pseudocode}
+% \FloatBarrier
+
+\section{Experiments}
+
+\subsection{Datasets and Implementation Details}
+
+\textbf{Datasets.} We use two equity universes. The US experiment uses
+the S\&P~100. The India experiment uses the NIFTY~100; 91~of
+approximately 100~constituents satisfied the minimum 1\,500-day
+continuous history requirement (Tata Motors~DVR, Jio Financial, Zomato,
+LIC, Lodha, IRFC, IRCTC, Mankind Pharma, and Max Healthcare were
+excluded for insufficient history or download failure). Both datasets
+span January~2015 to early~2026, sourced from the Yahoo Finance
+API~\cite{yang2020qlib}. Universe constituents reflect index composition
+at the download date; stocks delisted or removed between 2015 and 2026
+are absent, introducing potential survivorship
+bias~\cite{brown1992survivorship} noted as a limitation.
+Table~\ref{tab:datasets} summarizes dataset properties.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Dataset Characteristics and Evaluation Horizons}
+\label{tab:datasets}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lll}
+\toprule
+\textbf{Property} & \textbf{US Market} & \textbf{India Market}\\
+\midrule
+Universe       & S\&P~100 ($N=100$)  & NIFTY~100 ($N=91$ surviving)\\
+Data Source    & Yahoo Finance API   & Yahoo Finance API\\
+Date Range     & 2015-01-01 to 2026  & 2015-01-01 to 2026\\
+Asset Features & 12 technical        & 12 technical\\
+Macro Context  & VIX, SPX, TNX, DXY, & INDIAVIX, NSEI, NSEBANK,\\
+               & Gold, Oil, NDX      & USDINR, Gold, Oil, TNX\\
+Target Horizon & 5-day return        & 5-day return\\
+Lookback ($T$) & 60 trading days     & 60 trading days\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{Hyperparameters.} US hyperparameters were selected via
+50-trial Optuna TPE~\cite{akiba2019optuna} on folds~1--3. India HPO
+converged to a degenerate state---the top~10 trials produced identical
+configurations---and provided no improvement over the US configuration.
+Both are reported in the cross-market analysis.
+Table~\ref{tab:hpo} lists finalized settings.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Post-HPO Hyperparameter Configurations}
+\label{tab:hpo}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcc}
+\toprule
+\textbf{Hyperparameter} & \textbf{US (S\&P~100)} & \textbf{India (NIFTY~100)}\\
+\midrule
+Hidden Dimension ($d$)   & 256                 & 128\\
+Learning Rate            & $5\times10^{-5}$    & $1\times10^{-4}$\\
+Dropout ($p$)            & 0.30                & 0.30\\
+KNN Neighbors ($k$)      & 20                  & 20\\
+GAT Top Edges ($K$)      & 10                  & 10\\
+Loss ($w_\mathrm{IC}/w_\mathrm{MSE}/w_\mathrm{Rank}/w_\mathrm{BCE}$)
+                         & 0.31/0.49/0.10/0.10 & 0.50/0.30/0.10/0.10\\
+Epochs per Fold          & 20                  & 25\\
+Sequence Length ($T$)    & 60                  & 60\\
+Batch Size               & 64                  & 64\\
+Gradient Clipping        & 1.1                 & 1.1\\
+Weight Decay             & $4\times10^{-6}$    & $4\times10^{-6}$\\
+Optimizer                & \multicolumn{2}{c}{AdamW~\cite{loshchilov2017decoupled}
+                           + Cosine Annealing}\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{Implementation.} All experiments use Python~3 with
+PyTorch~\cite{paszke2019pytorch} and PyTorch
+Geometric~\cite{fey2019fast} on a single NVIDIA Tesla~T4 GPU
+(16\,GB VRAM). Manual random seeds and
+\texttt{torch.backends.cudnn.deterministic=True} ensure reproducibility.
+
+\subsection{Main Results --- US Market (S\&P~100)}
+
+Table~\ref{tab:main_results} reports out-of-sample performance on
+folds~4--7. CRML achieves mean daily IC~$=0.047$ with 95\,\% bootstrap
+CI~$[0.016,\,0.077]$. The lower bound is strictly positive, confirming
+a statistically significant cross-sectional ranking signal. A long-short
+decile portfolio yields Sharpe~$=1.263$ and hit rate~$=56.98\,\%$.
+Ridge regression reaches IC~$=0.020$ under identical features and
+protocol; the gap (0.027 IC points) represents the contribution of
+CRML's relational routing over linear feature aggregation.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Main Results on S\&P~100 (Held-Out Test Folds~4--7)}
+\label{tab:main_results}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Model}
+  & \textbf{IC (Mean$\pm$Std)}
+  & \textbf{95\,\% CI}
+  & \textbf{Sharpe}
+  & \textbf{Hit Rate}
+  & \textbf{L/S Spread}\\
+\midrule
+\textbf{CRML (Proposed)}
+  & $\mathbf{0.047\pm0.033}$
+  & $\mathbf{[0.016,\,0.077]}$
+  & $\mathbf{1.263}$
+  & $\mathbf{56.98\,\%}$
+  & $\sim\!\mathbf{0.005}$\\
+Linear Baseline (Ridge)
+  & $\sim\!0.020$ & -- & -- & -- & --\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_us_ic_bar.png}
+\caption{Mean daily IC per fold, S\&P~100. Blue~=~HPO folds~1--3
+(excluded from primary results); orange~=~test folds~4--7. Dashed
+lines mark the ridge baseline (IC~$=0.020$) and a reference threshold
+(IC~$=0.050$). Fold~6 (IC~$=0.004$) is near zero; Fold~7 (IC~$=0.089$)
+is the strongest. The fold-level spread reflects the non-stationarity
+of cross-sectional predictability documented across
+models~\cite{gu2020empirical}.}
+\label{fig:us_ic_bar}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_us_daily_ic_ts.png}
+\caption{Daily IC time series, test folds~4--7, S\&P~100. Each line
+is one 125-trading-day fold. Fold~6 sustains near-zero mean IC
+throughout; Fold~7 is consistently positive. The contrast between
+folds is consistent with macro-regime sensitivity.}
+\label{fig:us_daily_ic_ts}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_us_bootstrap_ic_hist.png}
+\caption{Bootstrap IC distribution, S\&P~100 (10\,000 resamples).
+Vertical lines mark the sample mean~(0.047) and CI bounds
+$[0.016,\,0.077]$. Both bounds lie above zero.}
+\label{fig:us_bootstrap_ic_hist}
+\end{figure}
+
+Fold-level IC varies substantially (Table~\ref{tab:perfoldc}).
+Fold~7 (IC~$=0.089$, Sharpe~$=2.417$) and Fold~5 (IC~$=0.065$,
+Sharpe~$=2.241$) are strongest; Fold~6 (IC~$=0.004$) is the weakest.
+This spread is typical of rolling-window equity prediction across
+models~\cite{gu2020empirical}: no architecture extracts uniform IC
+across all regimes.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Per-Fold IC Breakdown (S\&P~100)}
+\label{tab:perfoldc}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{clccl}
+\toprule
+\textbf{Fold} & \textbf{Role} & \textbf{IC} & \textbf{Sharpe} & \textbf{Notes}\\
+\midrule
+1 & HPO & 0.041 & 1.402 & Excluded from reported results\\
+2 & HPO & 0.026 & 0.903 & Excluded from reported results\\
+3 & HPO & 0.019 & 0.360 & Excluded from reported results\\
+\midrule
+4 & \textbf{Test} & 0.028 & 0.195 & Out-of-sample\\
+5 & \textbf{Test} & 0.065 & 2.241 & Out-of-sample\\
+6 & \textbf{Test} & 0.004 & 0.197 & Near-zero; regime-sensitive\\
+7 & \textbf{Test} & 0.089 & 2.417 & Strongest fold\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{Ablation Study}
+\label{sec:ablation}
+
+Eight model variants are evaluated under identical post-HPO
+hyperparameters and compared against the full architecture using
+one-sided paired t-tests ($\alpha=0.10$) across folds~4--7. Cohen's
+$d$ is reported alongside $p$-values because the low fold count ($n=4$)
+limits statistical power. Table~\ref{tab:ablation} reports results.
+
+\begin{table*}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Ablation Study, S\&P~100 (Test Folds~4--7).
+         $^\dagger$The ablation full-model IC of 0.043 differs from the
+         main result IC of 0.047 because it is from a separate training
+         run; the difference lies within fold-level variance and does
+         not affect relative comparisons.}
+\label{tab:ablation}
+\centering
+\begin{tabular}{lccccccr}
+\toprule
+\textbf{Variant}
+  & \textbf{IC (Mean$\pm$Std)}
+  & $\boldsymbol{\Delta}$\textbf{IC}
+  & \textbf{$p$}
+  & \textbf{Cohen's $d$}
+  & \textbf{Sig.\ ($\alpha{=}0.10$)}
+  & \textbf{Sharpe}
+  & \textbf{Hit Rate}\\
+\midrule
+\textbf{Full Model}$^\dagger$
+  & $\mathbf{0.043\pm0.029}$ & --   & --    & --    & --  & $\mathbf{1.238}$ & $\mathbf{57.0\,\%}$\\
+\midrule
+No Static Sector HG
+  & $0.031\pm0.025$ & $-0.012$ & 0.053 & 1.327 & Yes & 0.899 & 57.0\,\%\\
+No Dynamic KNN HG
+  & $0.037\pm0.030$ & $-0.006$ & 0.014 & 2.323 & Yes & 1.104 & 57.0\,\%\\
+No Pairwise GAT
+  & $0.039\pm0.037$ & $-0.005$ & 0.198 & 0.570 & No  & 1.091 & 57.0\,\%\\
+\midrule
+Static Sector HG Only
+  & $0.038\pm0.040$ & $-0.005$ & 0.336 & 0.270 & No  & 1.039 & 57.0\,\%\\
+Dynamic KNN HG Only
+  & $0.029\pm0.022$ & $-0.014$ & 0.038 & 1.539 & Yes & 0.857 & 57.0\,\%\\
+Pairwise GAT Only
+  & $0.033\pm0.022$ & $-0.010$ & 0.082 & 1.059 & Yes & 0.934 & 57.0\,\%\\
+GRU Only (No Graph)
+  & $0.035\pm0.027$ & $-0.008$ & 0.079 & 1.081 & Yes & 1.097 & 57.0\,\%\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_us_ablation_bar.png}
+\caption{Mean IC across ablation variants, S\&P~100. Dashed line marks
+the full model (0.043). Every variant falls below it. KNN HG alone
+(0.029) falls below GRU-only (0.035), confirming that dynamic
+similarity clustering requires stable sector structure to add value.}
+\label{fig:us_ablation_bar}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_us_sharpe_bar.png}
+\caption{Sharpe ratio across ablation variants. GAT removal misses
+IC significance ($p=0.198$) but drops Sharpe from 1.238 to 1.091
+(13.5\,\% degradation). Directed bilateral signals improve portfolio
+efficiency even when their raw IC contribution is small.}
+\label{fig:us_sharpe_bar}
+\end{figure}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{graphs/fig_us_ablation_heatmap.png}
+\caption{IC heatmap: 8 ablation variants (rows) $\times$ 4 test folds
+(columns), S\&P~100. Color: red (low) to green (high IC). Near-zero IC
+across all variants in Fold~6 points to a macro regime unfavorable to
+cross-sectional prediction---not an architectural problem. The full
+model row is consistently the darkest.}
+\label{fig:us_ablation_heatmap}
+\end{figure*}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_fusion_gate_weights.png}
+\caption{Fusion gate weights averaged over all stocks and test days,
+S\&P~100. The near-uniform distribution ($\approx\!0.333$ per module)
+is an optimization equilibrium. All three scales carry complementary
+information---removing any one module degrades performance.}
+\label{fig:fusion_gate_weights}
+\end{figure}
+
+Every variant that removes or isolates a module produces lower mean IC,
+so the tri-scale combination outperforms all single-scale and dual-scale
+alternatives tested. The Static Sector Hypergraph is the primary anchor:
+its removal causes the largest absolute drop ($\Delta\mathrm{IC}=-0.012$,
+$p=0.053$), and it is the only module that exceeds the GRU-only baseline
+in isolation (0.038 vs.\ 0.035). This is consistent with the established
+dominance of sector co-movement in large-cap US equity
+returns~\cite{jegadeesh1993returns}.
+
+The Dynamic KNN Hypergraph exhibits a structural duality. Removing it
+produces the largest effect size ($p=0.014$, Cohen's $d=2.323$), but
+using it alone falls below the GRU-only baseline (0.029 vs.\ 0.035).
+Dynamic similarity is a strong auxiliary signal when sector structure
+provides a stable anchor; without that anchor, it introduces noise.
+
+GAT removal does not reach IC significance ($p=0.198$), but its
+inclusion raises Sharpe from 1.091 to 1.238 (13.5\,\%). Directed
+bilateral signals improve portfolio efficiency even when their IC
+contribution is statistically marginal.
+
+The gate equilibrium (0.333 per module) is consistent with the ablation
+finding: all three scales carry complementary information, so the
+optimizer has no incentive to silence any of them. Regime-dependent
+gate specialization via explicit symmetry-breaking remains future work.
+
+\subsection{Training Protocol Analysis}
+\label{sec:protocol}
+
+MASTER, StockMixer, and HIST all use the standard Qlib training
+protocol: MSE-only loss with \textit{CSZScoreNorm} label normalization
+and \textit{DropExtremeLabel} preprocessing~\cite{yang2020qlib}. Four
+variants were tested to determine whether adopting this protocol would
+improve CRML's IC.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Training Protocol Comparison (S\&P~100, Test Folds~4--7).
+         Variants~B--D were not HPO-tuned; the scale of IC collapse
+         far exceeds what hyperparameter mismatch alone would explain.}
+\label{tab:training_method}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{cllccc}
+\toprule
+\textbf{Var.} & \textbf{Loss} & \textbf{Label Processing}
+              & \textbf{IC} & \textbf{Sharpe} & \textbf{Hit Rate}\\
+\midrule
+A & Multi-objective (ours) & Raw $\times100$            & 0.043 & 1.218 & 57.0\,\%\\
+B & Multi-objective        & CSZScoreNorm               & 0.032 & 1.190 & 57.0\,\%\\
+C & MSE only (Qlib)        & CSZScoreNorm + DropExtreme & 0.007 & 0.374 & 46.7\,\%\\
+D & MSE + 0.1$\times$Rank  & CSZScoreNorm + DropExtreme & 0.006 & 0.368 & 46.7\,\%\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_us_training_method_bar.png}
+\caption{IC by training protocol variant, S\&P~100. Moving from our
+protocol~(A) to the standard Qlib protocol~(C) collapses IC by
+84\,\%. Under Variant~C, hit rate falls to 46.7\,\%---below random---
+indicating an inverted ranking signal.}
+\label{fig:us_training_method_bar}
+\end{figure}
+
+Applying the Qlib standard (Variant~C) collapses IC from 0.043 to
+0.007 (84\,\% reduction) and drops hit rate to 46.7\,\%, below the
+50\,\% random baseline. Two mechanisms drive the failure:
+\textit{DropExtremeLabel} removes tail observations that carry the
+highest cross-sectional signal density, and removing BCE regularization
+on the direction head destabilizes the shared embedding. Adding a
+ranking term (Variant~D) does not recover the signal.
+
+An important caveat: Variants~B--D were not HPO-tuned for their
+respective loss functions. A fully fair comparison would require
+separate search. However, a sixfold IC collapse and sub-random
+directional accuracy are diagnostic of structural incompatibility, not
+hyperparameter mismatch. MASTER and StockMixer use single-head designs
+for which the Qlib protocol was developed. It does not transfer to
+dual-head architectures. Researchers adapting benchmark training recipes
+to architectures with different output structures should verify
+compatibility before drawing conclusions.
+
+\subsection{Cross-Market Analysis --- India (NIFTY~100)}
+\label{sec:india}
+
+No statistically significant cross-sectional signal is found on the
+NIFTY~100. Table~\ref{tab:india_results} reports results for US
+parameter transfer and India-specific HPO. A paired t-test yields
+$p=0.574$ ($\Delta\mathrm{IC}=-0.001$); local optimization provides
+no detectable improvement.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{India Market Results (NIFTY~100, $N=91$, Test Folds~4--7)}
+\label{tab:india_results}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Configuration} & \textbf{IC (Mean$\pm$Std)} & \textbf{95\,\% CI}
+                       & \textbf{Sharpe} & \textbf{Hit Rate}\\
+\midrule
+US HP Transfer & $0.017\pm0.033$ & $[-0.017,\;0.049]$ & 0.974 & 54.9\,\%\\
+India HPO      & $0.016\pm0.026$ & $[-0.015,\;0.039]$ & 0.865 & 55.6\,\%\\
+\midrule
+\multicolumn{5}{l}{Paired t-test: $\Delta\mathrm{IC}=-0.001$,
+$p=0.574$ (not significant)}\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_india100_ic_bar.png}
+\caption{IC per fold, NIFTY~100 (India HPO). Fold~7 yields
+IC~$=-0.031$; the mean IC of 0.016 produces
+CI~$[-0.015,\,0.039]$ that spans zero.}
+\label{fig:india100_ic_bar}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_india100_bootstrap_ic_hist.png}
+\caption{Bootstrap IC distribution, NIFTY~100 (10\,000 resamples).
+The lower CI bound is below zero.}
+\label{fig:india100_bootstrap_ic_hist}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_us_vs_india_ic_ci.png}
+\caption{Cross-market IC comparison with 95\,\% bootstrap CIs.
+S\&P~100 CI lies entirely above zero; NIFTY~100 CI straddles zero
+under both parameter configurations.}
+\label{fig:us_vs_india_ic_ci}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{graphs/fig_us_vs_india_per_fold_bar.png}
+\caption{Per-fold IC, S\&P~100 (blue) vs.\ NIFTY~100 (red),
+test folds~4--7. Both markets produce near-zero IC in Fold~6,
+pointing to a shared global regime effect. US IC exceeds India IC
+in every test fold.}
+\label{fig:us_vs_india_per_fold_bar}
+\end{figure}
+
+Three structural conditions explain the null India result. First, with
+$N=91$ and $k=20$, each stock connects to 22\,\% of the NIFTY~100
+universe through the KNN module, approaching a fully connected graph
+that eliminates the structural specificity the module is designed to
+provide (the same ratio on the S\&P~100 is 20\,\%). Second, NIFTY~100
+sector concentration is high: financial services accounts for roughly
+35\,\% of index weight~\cite{nse2024nifty}, and several sectors contain
+only one or two stocks, producing degenerate single-stock hyperedges in
+the Static Sector HG---our ablation's most critical module. Third,
+higher retail participation and T+1 settlement in Indian
+markets~\cite{sebi2023settlement} introduce intraday noise patterns that
+the 12 US-calibrated technical features do not capture. These conditions
+define a \textit{market efficiency threshold}: the architecture requires
+sufficient sector diversity, universe breadth, and microstructural
+efficiency to generate propagatable cross-sectional signals.
+
+\subsection{Benchmark Comparison}
+
+Table~\ref{tab:benchmarks} places CRML against published architectures.
+MASTER, StockMixer, and HIST were evaluated on Chinese A-share markets
+(CSI~300/800) with 158-dimensional Alpha158 features; our primary
+evaluation uses 12 technical indicators on the S\&P~100. A direct IC
+comparison is informative but not valid given these differences. Our
+primary empirical claim is architectural---that multi-scale relational
+topology outperforms single-scale alternatives under identical
+conditions.
+
+\begin{table*}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Benchmark Contextualization. Sequential baseline IC values are
+         from the Qlib benchmark leaderboard~\cite{yang2020qlib} for
+         CSI~300 with Alpha158 features. Direct cross-market IC
+         comparison is not valid due to differences in universe, market
+         efficiency, features, and evaluation protocol.
+         $^\dagger$Config~B-OUR: four-component loss, seq\_len$=60$;
+         Config~B-8: MASTER protocol (MSE-only, CSZScoreNorm,
+         DropExtreme, seq\_len$=8$).}
+\label{tab:benchmarks}
+\centering
+\begin{tabular}{llccccc}
+\toprule
+\textbf{Model} & \textbf{Type} & \textbf{IC}
+               & \textbf{Universe} & \textbf{Features}
+               & \textbf{Year} & \textbf{Venue}\\
+\midrule
+\multicolumn{7}{l}{\textit{Sequential baselines}}\\
+LSTM~\cite{hochreiter1997long}    & RNN       & $\sim$0.028 & CSI~300 & Alpha158 & 1997 & Neural Computation\\
+GRU~\cite{cho2014learning}        & RNN       & $\sim$0.030 & CSI~300 & Alpha158 & 2014 & EMNLP\\
+ALSTM~\cite{qin2017dual}          & RNN+Attn  & $\sim$0.036 & CSI~300 & Alpha158 & 2017 & IJCAI\\
+SFM~\cite{zhang2017stock}         & Freq-RNN  & $\sim$0.032 & CSI~300 & Alpha158 & 2017 & KDD\\
+\midrule
+\multicolumn{7}{l}{\textit{Adaptation and routing models}}\\
+TRA~\cite{lin2021learning}        & RNN+Route & $\sim$0.041 & CSI~300 & Alpha158 & 2021 & NeurIPS\\
+DoubleAdapt~\cite{zhao2023doubleadapt} & Meta-IL & $\sim$0.044 & CSI~300 & Alpha158 & 2023 & KDD\\
+\midrule
+\multicolumn{7}{l}{\textit{Graph-based models}}\\
+RSR~\cite{feng2019temporal}       & GNN       & --    & NYSE/NASDAQ  & Price      & 2019 & ACM TOIS\\
+HATS~\cite{kim2019hats}           & Het-GNN   & --    & S\&P~500     & Price+Wiki & 2019 & arXiv\\
+HIST~\cite{xu2021hist}            & Concept   & 0.048 & CSI~300/800  & Alpha158   & 2021 & arXiv\\
+STHAN-SR~\cite{sawhney2021sthan}  & HGNN      & --    & NASDAQ       & Price      & 2021 & AAAI\\
+MASTER~\cite{li2024master}        & Transf.   & 0.059 & CSI~300/800  & Alpha158   & 2024 & AAAI\\
+StockMixer~\cite{fan2024stockmixer} & MLP-Mix & 0.055 & CSI~300/800  & Alpha158   & 2024 & AAAI\\
+\midrule
+\multicolumn{7}{l}{\textit{This work --- US S\&P~100 (primary)}}\\
+\textbf{CRML (Proposed)} & \textbf{Multi-HG+GAT} & $\mathbf{0.047}$
+  & \textbf{S\&P~100} & \textbf{12 Technical} & \textbf{2026} & \textbf{--}\\
+Linear Baseline (Ridge) & Linear & $\sim$0.020 & S\&P~100 & 12 Technical & 2026 & --\\
+\midrule
+\multicolumn{7}{l}{\textit{This work --- CSI~300 cross-market
+                   (Alpha158, not primary)$^\dagger$}}\\
+CRML (Config~B-8) & Multi-HG+GAT & 0.016 & CSI~300 & 158 (Alpha158) & 2026 & --\\
+CRML (Config~B-OUR) & Multi-HG+GAT & 0.041 & CSI~300 & 158 (Alpha158) & 2026 & --\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+CRML reaches IC~$=0.047$ on the S\&P~100 with 12~features, one unit of
+IC below HIST's 0.048 on CSI~300/800 with 158~features. Given that the
+S\&P~100 is one of the most efficiently priced equity universes in the
+world and the feature set is $13\times$ smaller, this near-parity under
+a strictly embargoed protocol is a useful data point.
+
+The CSI~300 comparison isolates the protocol effect. Under the MASTER
+protocol (Config~B-8), CRML reaches IC~$=0.016$---well below MASTER
+(0.059) and StockMixer (0.055). Switching to our four-component loss and
+longer sequence length (Config~B-OUR) recovers IC to 0.041, a $2.5\times$
+improvement from protocol substitution alone. This directly corroborates
+Section~\ref{sec:protocol}: the gap between CRML and CSI~300 benchmarks
+is largely a protocol mismatch, not an architectural limitation.
+
+\section{Conclusion}
+
+This paper posed three research questions and the experimental results
+provide direct answers.
+
+\textbf{RQ1 is answered affirmatively.} Jointly modeling static sector
+co-membership, dynamic similarity clustering, and directed pairwise
+lead-lag generates a statistically significant cross-sectional signal on
+the S\&P~100 with 12~technical features. Mean IC~$=0.047$ (bootstrap
+CI~$[0.016,\,0.077]$) over four held-out test folds, against IC~$=0.020$
+for ridge regression, confirms the gain is structural rather than
+feature-driven.
+
+\textbf{RQ2 is answered affirmatively.} Ablation shows that removing
+any single module degrades performance. Sector hypergraph removal causes
+the largest absolute IC drop ($\Delta\mathrm{IC}=-0.012$); KNN removal
+yields the largest effect size (Cohen's $d=2.323$); GAT inclusion
+raises long-short Sharpe by 13.5\,\% despite missing IC significance.
+The gate equilibrium at 0.333 per module confirms complementary rather
+than redundant contributions.
+
+\textbf{RQ3 is answered negatively.} CRML does not transfer to the
+NIFTY~100 under any tested configuration. Bootstrap CIs span zero for
+both parameter transfer and India-specific HPO. Three structural
+conditions---high KNN connectivity ratio relative to universe size,
+degenerate single-stock sector hyperedges from index concentration, and
+a US-calibrated feature set---define a market efficiency threshold below
+which the architecture's relational propagation does not produce
+detectable alpha.
+
+A separate finding concerns training protocols. Applying the standard
+Qlib MSE-only objective to CRML's dual-head design collapses IC by
+84\,\% and drops directional accuracy below random. The BCE direction
+loss is a structural component of the training objective. Benchmark
+training recipes are not architecture-agnostic; compatibility should be
+verified before reuse.
+
+Four limitations bound these conclusions. First, four held-out test
+folds limit statistical power; paired comparisons in the ablation do not
+all reach conventional thresholds despite consistent IC improvements,
+and Sharpe evidence partially fills this gap. Second, the 12-feature
+input excludes fundamental data, analyst revisions, and alternative
+signals that institutional models use. Third, the fusion gate converges
+to uniform weights, suggesting the current gating design does not
+realize the regime-dependent routing that Proposition~1 shows is within
+the model's capacity. Fourth, the data covers one particular multi-year
+period on two specific indices; the roll-forward window cannot
+characterize all possible macro environments. Universe survivorship
+bias~\cite{brown1992survivorship}---from using a 2026 index snapshot
+rather than point-in-time membership---further qualifies generalizability.
+
+Future work has several directions. Incorporating fundamental and
+alternative data will test whether the relational topology amplifies
+lower-frequency signals. Explicit symmetry-breaking regularization in
+the gating layer may unlock the regime-dependent routing that the
+architecture supports but does not consistently realize. Scaling to
+broader universes such as the Russell~1000 will clarify the upper
+boundary of the market efficiency threshold identified here, and
+additional emerging market tests will clarify the lower boundary.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
