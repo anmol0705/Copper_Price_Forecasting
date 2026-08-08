@@ -1,8 +1,6 @@
 torch>=2.0
 torch-geometric>=2.4
-torch-geometric-temporal>=0.54
 vmdpy>=0.2
-PyEMD>=1.4
 yfinance>=0.2.31
 pandas>=2.0
 numpy>=1.24

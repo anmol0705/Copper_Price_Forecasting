@@ -11,20 +11,28 @@ from torch.utils.data import DataLoader, Dataset
 
 logger = logging.getLogger(__name__)
 
-# Locked 10-variable scope (see vmd-mfgnn-protocol/SKILL.md), all sourced via
+# Locked 8-variable scope (see vmd-mfgnn-protocol/SKILL.md), all sourced via
 # Yahoo Finance only. FRED and BDI are explicitly out of scope.
 #
-# Note on zinc/nickel: there is no standalone COMEX/NYMEX-style "=F" futures
-# contract for zinc or nickel on Yahoo Finance (they trade on the LME, which
-# Yahoo does not mirror as a tradable future). "ZNC=F" / "NI=F" used previously
-# do not resolve to real instruments. The NASDAQ Commodity sub-indices below
-# are genuine, currently-listed Yahoo symbols that track zinc/nickel spot
-# price and are used as the closest available proxy.
+# Note on zinc/nickel (dropped 2026-08-07): there is no standalone
+# COMEX/NYMEX-style "=F" futures contract for zinc or nickel on Yahoo
+# Finance (they trade on the LME, which Yahoo does not mirror as a tradable
+# future). "ZNC=F" / "NI=F" used previously do not resolve to real
+# instruments. As a substitute, the NASDAQ Commodity sub-indices
+# "^NQCIZNER" (zinc) and "^NQCINIER" (nickel) were used as the closest
+# available proxy. On a live production data-download run on 2026-08-07
+# (covering 2010-2025), both of those sub-index tickers were confirmed
+# dead/delisted on Yahoo Finance -- yfinance raises
+# `YFPricesMissingError('possibly delisted; no price data found')` for
+# both. With no further viable Yahoo Finance substitute for zinc/nickel,
+# they have been dropped entirely from the locked scope. This is a
+# deliberate, disclosed reduction from the original 10-variable locked
+# scope to an 8-variable scope: copper, aluminum, gold, oil, dxy, sp500,
+# vix, us10y. See vmd-mfgnn-protocol/SKILL.md for the authoritative,
+# up-to-date scope table.
 TICKERS = {
     "copper": "HG=F",
     "aluminum": "ALI=F",
-    "zinc": "^NQCIZNER",
-    "nickel": "^NQCINIER",
     "gold": "GC=F",
     "oil": "CL=F",
     "dxy": "DX-Y.NYB",
@@ -58,12 +66,36 @@ class DataDownloader:
                 data = yf.download(ticker, start=self.start, end=self.end,
                                    progress=False, auto_adjust=True)
                 if len(data) > 0:
-                    frames[name] = data["Close"]
-                    logger.info(f"  {name} ({ticker}): {len(data)} rows")
+                    # yfinance can return MultiIndex columns (even for a
+                    # single ticker, depending on version/call shape), in
+                    # which case data["Close"] comes back as a 1-column
+                    # DataFrame instead of a Series. Flatten defensively so
+                    # `frames` always holds genuine Series -- an un-flattened
+                    # DataFrame value here is what causes pd.DataFrame(frames)
+                    # below to raise a cryptic "If using all scalar values,
+                    # you must pass an index" error.
+                    close = data["Close"]
+                    if isinstance(close, pd.DataFrame):
+                        close = close.iloc[:, 0]
+                    frames[name] = close
+                    valid = close.dropna()
+                    first_date = valid.index.min() if len(valid) > 0 else None
+                    last_date = valid.index.max() if len(valid) > 0 else None
+                    logger.info(f"  {name} ({ticker}): {len(data)} rows, "
+                                f"valid range {first_date} to {last_date}")
                 else:
                     logger.warning(f"  {name} ({ticker}): no data returned")
             except Exception as e:
                 logger.warning(f"  {name} ({ticker}): failed - {e}")
+
+        missing = [f"{name} ({TICKERS[name]})" for name in TICKERS if name not in frames]
+        if missing:
+            raise ValueError(
+                f"DataDownloader.download() failed to retrieve usable data for "
+                f"{len(missing)}/{len(TICKERS)} ticker(s): {', '.join(missing)}. "
+                f"Refusing to build a partial/malformed price DataFrame -- fix "
+                f"or remove the failing ticker(s) from TICKERS and re-run."
+            )
 
         df = pd.DataFrame(frames)
         df = df.ffill(limit=5).dropna()
@@ -181,7 +213,9 @@ class VMDDecomposerExpanding:
     252-day window) costs only ~30-40 minutes one-time CPU for the full
     ~4,000-day x 10-variable dataset (cached afterward), so the
     "computationally infeasible" rationale below no longer holds and this
-    class is superseded.
+    class is superseded. (Note: the benchmark's "~4,000-day x 10-variable"
+    figure predates the 2026-08-07 zinc/nickel scope reduction to 8
+    variables; the per-variable cost is unaffected.)
 
     True daily-refit VMD (see `VMDDecomposer` above) is leakage-free -- each
     day's modes come from a window that ends exactly at that day.

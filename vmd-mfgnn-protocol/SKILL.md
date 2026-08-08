@@ -4,22 +4,37 @@ Reference this file instead of re-deriving scope.
 
 ---
 
-## Locked Input Variables (10 total)
+## Locked Input Variables (8 total)
 
 All data sourced via **Yahoo Finance only**. Explicitly out of scope: FRED, TC/RC, COT, BDI.
 
 | Variable | Ticker | Source |
 |----------|--------|--------|
 | Copper | HG=F | Yahoo Finance |
-| Aluminum | AL=F | Yahoo Finance |
-| Zinc | ZB=F | Yahoo Finance |
-| Nickel | NK=F | Yahoo Finance |
+| Aluminum | ALI=F | Yahoo Finance |
 | Gold | GC=F | Yahoo Finance |
 | Oil | CL=F | Yahoo Finance |
 | DXY (US Dollar Index) | DX-Y.NYB | Yahoo Finance |
 | S&P 500 | ^GSPC | Yahoo Finance |
 | VIX (Volatility Index) | ^VIX | Yahoo Finance |
 | US 10Y Yield | ^TNX | Yahoo Finance |
+
+**Scope reduction (2026-08-07)**: Zinc and Nickel have been dropped from the
+locked scope. They were originally sourced via NASDAQ Commodity sub-index
+proxies (`^NQCIZNER` for zinc, `^NQCINIER` for nickel) since no standalone
+COMEX/NYMEX-style Yahoo Finance futures contract exists for either metal (they
+trade on the LME, which Yahoo does not mirror). On a live production data
+download run on 2026-08-07 (the real 2010-2025 pull), both proxy tickers were
+confirmed dead/delisted -- yfinance raises
+`YFPricesMissingError('possibly delisted; no price data found')` for both.
+With no further viable Yahoo Finance substitute, zinc and nickel are removed
+from the locked scope entirely. This is a deliberate, disclosed reduction
+from the original 10-variable scope to the current 8-variable scope (copper,
+aluminum, gold, oil, dxy, sp500, vix, us10y). `src/data_pipeline.py`'s
+`TICKERS` dict and `configs/default.yaml`'s `tickers:` section were updated
+to match this table exactly, zero drift. Any paper text/limitations section
+referencing "10 variables" must be updated to "8 variables" as part of the
+Phase 4 LaTeX rewrite.
 
 ---
 
