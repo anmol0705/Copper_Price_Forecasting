@@ -6,13 +6,16 @@ data:
   val_end: "2021-12-31"
   # test: 2022-01-01 to end
 
-  # All 10 variables sourced via Yahoo Finance only (must match src/data_pipeline.py
+  # All 8 variables sourced via Yahoo Finance only (must match src/data_pipeline.py
   # TICKERS exactly). FRED and BDI (Baltic Dry Index) are out of scope and removed.
+  # NOTE (2026-08-07): zinc/nickel dropped -- their NASDAQ sub-index proxies
+  # (^NQCIZNER / ^NQCINIER) are confirmed dead/delisted on Yahoo Finance as of
+  # a live production run. Deliberate, disclosed reduction from the original
+  # 10-variable locked scope to 8. See vmd-mfgnn-protocol/SKILL.md and
+  # src/data_pipeline.py's TICKERS comment for full detail.
   tickers:
     copper: "HG=F"
     aluminum: "ALI=F"
-    zinc: "^NQCIZNER"
-    nickel: "^NQCINIER"
     gold: "GC=F"
     oil: "CL=F"
     dxy: "DX-Y.NYB"
@@ -58,6 +61,6 @@ training:
 # the paper) and defaults to disabled so the already-verified pipeline
 # behavior is unchanged unless a human explicitly opts in.
 hpo:
-  enabled: false
-  n_trials: 15
+  enabled: true
+  n_trials: 10
   trial_epochs: 25
