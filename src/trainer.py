@@ -39,10 +39,41 @@ class VMDMFGNNTrainer:
         self.device = get_device()
         self.model.to(self.device)
         tc = config["training"]
-        self.optimizer = torch.optim.Adam(
-            model.parameters(), lr=tc["learning_rate"],
-            weight_decay=tc["weight_decay"]
-        )
+        if tc.get("no_decay_graph_embeddings", False):
+            # OFF by default. When enabled, excludes the graph embedding
+            # parameters (FrequencyGraphConstructor's emb1/emb2, for every
+            # band, in both VMDMFGNN and PooledGraphMFGNN) from weight
+            # decay. This directly targets the "Adjacency Collapse
+            # Diagnosed" root cause in STATUS.md: Adam's coupled L2 decay
+            # exerts a constant pull toward zero on these embeddings while
+            # the task gradient reaching them is weak, causing an
+            # isotropic norm collapse that makes the learned adjacency
+            # degenerate to uniform (1/N). Parameter names are matched via
+            # the ".emb1." / ".emb2." substring, which is present in both
+            # models' dotted parameter paths (e.g.
+            # "graph_constructors.0.emb1.weight" for VMDMFGNN's per-band
+            # ModuleList, "graph_constructor.emb1.weight" for
+            # PooledGraphMFGNN's single constructor).
+            no_decay_params, decay_params = [], []
+            for name, param in model.named_parameters():
+                if not param.requires_grad:
+                    continue
+                if ".emb1." in name or ".emb2." in name:
+                    no_decay_params.append(param)
+                else:
+                    decay_params.append(param)
+            self.optimizer = torch.optim.Adam(
+                [
+                    {"params": decay_params, "weight_decay": tc["weight_decay"]},
+                    {"params": no_decay_params, "weight_decay": 0.0},
+                ],
+                lr=tc["learning_rate"],
+            )
+        else:
+            self.optimizer = torch.optim.Adam(
+                model.parameters(), lr=tc["learning_rate"],
+                weight_decay=tc["weight_decay"]
+            )
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=tc["epochs"]
         )
@@ -232,23 +263,47 @@ class VMDMFGNNTrainer:
                     state = loaded
                     completed = True
 
-                self.model.load_state_dict(state)
-                self.model.to(self.device)
-
-                if completed:
-                    logger.info(f"Resuming from checkpoint {checkpoint_path}: "
-                                f"training previously completed, skipping "
-                                f"training entirely.")
-                    return {"train_loss": [], "val_metrics": [],
-                            "resumed_from_checkpoint": str(checkpoint_path)}
-                else:
+                try:
+                    self.model.load_state_dict(state)
+                    self.model.to(self.device)
+                except RuntimeError as e:
+                    # The on-disk checkpoint's tensor shapes don't match this
+                    # model's architecture -- most commonly because a
+                    # hyperparameter that determines parameter shapes (e.g.
+                    # hidden_dim) changed since the checkpoint was saved, such
+                    # as HPO picking a different hidden_dim on a later run
+                    # than whatever produced the stale checkpoint at this
+                    # same path. Rather than crash, discard the incompatible
+                    # checkpoint and fall through to a completely fresh
+                    # training run, exactly as if checkpoint_path didn't
+                    # exist. New checkpoints saved below (as training
+                    # progresses) will overwrite this stale file with
+                    # correctly-shaped weights, so future resumes at this
+                    # model's current architecture will work normally again.
                     logger.warning(
-                        f"Incomplete checkpoint found at {checkpoint_path} "
-                        f"(a prior run was interrupted before completion). "
-                        f"Loaded its weights as a starting point and "
-                        f"continuing with a fresh {epochs}-epoch training "
-                        f"run rather than skipping training."
+                        f"Checkpoint at {checkpoint_path} is incompatible "
+                        f"with the current model's architecture (likely "
+                        f"because a shape-determining hyperparameter such as "
+                        f"hidden_dim changed since it was saved -- e.g. HPO "
+                        f"selected a different hidden_dim). Ignoring the "
+                        f"stale checkpoint and training FRESH instead of "
+                        f"resuming. Original error: {e}"
                     )
+                else:
+                    if completed:
+                        logger.info(f"Resuming from checkpoint {checkpoint_path}: "
+                                    f"training previously completed, skipping "
+                                    f"training entirely.")
+                        return {"train_loss": [], "val_metrics": [],
+                                "resumed_from_checkpoint": str(checkpoint_path)}
+                    else:
+                        logger.warning(
+                            f"Incomplete checkpoint found at {checkpoint_path} "
+                            f"(a prior run was interrupted before completion). "
+                            f"Loaded its weights as a starting point and "
+                            f"continuing with a fresh {epochs}-epoch training "
+                            f"run rather than skipping training."
+                        )
 
         best_state = None
         history = {"train_loss": [], "val_metrics": []}

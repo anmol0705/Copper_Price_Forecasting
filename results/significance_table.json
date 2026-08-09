@@ -1,0 +1,146 @@
+{
+  "ARIMA_h1": {
+    "baseline": "ARIMA",
+    "horizon": 1,
+    "dm_stat": 1.1109659074639255,
+    "p_value": 0.2665830243066969
+  },
+  "LSTM_h1": {
+    "baseline": "LSTM",
+    "horizon": 1,
+    "dm_stat": -2.522144317626953,
+    "p_value": 0.011664184315550719
+  },
+  "Transformer_h1": {
+    "baseline": "Transformer",
+    "horizon": 1,
+    "dm_stat": -11.218842506408691,
+    "p_value": 0.0
+  },
+  "SimpleMTGNN_h1": {
+    "baseline": "SimpleMTGNN",
+    "horizon": 1,
+    "dm_stat": -0.8597447276115417,
+    "p_value": 0.38992977340565704
+  },
+  "XGBoost_h1": {
+    "baseline": "XGBoost",
+    "horizon": 1,
+    "dm_stat": 2.4587197303771973,
+    "p_value": 0.013943342199544517
+  },
+  "VMD-LSTM_h1": {
+    "baseline": "VMD-LSTM",
+    "horizon": 1,
+    "dm_stat": -16.777414321899414,
+    "p_value": 0.0
+  },
+  "ARIMA_h5": {
+    "baseline": "ARIMA",
+    "horizon": 5,
+    "dm_stat": -0.6437773368783233,
+    "p_value": 0.5197198318382252
+  },
+  "LSTM_h5": {
+    "baseline": "LSTM",
+    "horizon": 5,
+    "dm_stat": -1.0121542921603972,
+    "p_value": 0.3114642867899957
+  },
+  "Transformer_h5": {
+    "baseline": "Transformer",
+    "horizon": 5,
+    "dm_stat": -3.3185249466449207,
+    "p_value": 0.0009049423876532625
+  },
+  "SimpleMTGNN_h5": {
+    "baseline": "SimpleMTGNN",
+    "horizon": 5,
+    "dm_stat": -7.871698895314911,
+    "p_value": 3.552713678800501e-15
+  },
+  "XGBoost_h5": {
+    "baseline": "XGBoost",
+    "horizon": 5,
+    "dm_stat": -0.15048577823111634,
+    "p_value": 0.8803813702945016
+  },
+  "VMD-LSTM_h5": {
+    "baseline": "VMD-LSTM",
+    "horizon": 5,
+    "dm_stat": -3.4644417672289416,
+    "p_value": 0.0005313331627969653
+  },
+  "ARIMA_h10": {
+    "baseline": "ARIMA",
+    "horizon": 10,
+    "dm_stat": -0.17133287158741636,
+    "p_value": 0.8639620348040327
+  },
+  "LSTM_h10": {
+    "baseline": "LSTM",
+    "horizon": 10,
+    "dm_stat": -3.594559986020999,
+    "p_value": 0.0003249402752625308
+  },
+  "Transformer_h10": {
+    "baseline": "Transformer",
+    "horizon": 10,
+    "dm_stat": -1.1011016020676054,
+    "p_value": 0.2708524398615002
+  },
+  "SimpleMTGNN_h10": {
+    "baseline": "SimpleMTGNN",
+    "horizon": 10,
+    "dm_stat": -4.049598419514553,
+    "p_value": 5.1305597611905895e-05
+  },
+  "XGBoost_h10": {
+    "baseline": "XGBoost",
+    "horizon": 10,
+    "dm_stat": 0.09191947928567906,
+    "p_value": 0.9267620147490172
+  },
+  "VMD-LSTM_h10": {
+    "baseline": "VMD-LSTM",
+    "horizon": 10,
+    "dm_stat": -2.696308272261085,
+    "p_value": 0.007011274684082469
+  },
+  "ARIMA_h22": {
+    "baseline": "ARIMA",
+    "horizon": 22,
+    "dm_stat": 0.8666114157524138,
+    "p_value": 0.386154956539537
+  },
+  "LSTM_h22": {
+    "baseline": "LSTM",
+    "horizon": 22,
+    "dm_stat": -1.4887029917027914,
+    "p_value": 0.13656559686751213
+  },
+  "Transformer_h22": {
+    "baseline": "Transformer",
+    "horizon": 22,
+    "dm_stat": -3.734050807245334,
+    "p_value": 0.00018842445724032153
+  },
+  "SimpleMTGNN_h22": {
+    "baseline": "SimpleMTGNN",
+    "horizon": 22,
+    "dm_stat": -2.3044763394907832,
+    "p_value": 0.021195919034054267
+  },
+  "XGBoost_h22": {
+    "baseline": "XGBoost",
+    "horizon": 22,
+    "dm_stat": 0.7809855050044399,
+    "p_value": 0.4348110200000892
+  },
+  "VMD-LSTM_h22": {
+    "baseline": "VMD-LSTM",
+    "horizon": 22,
+    "dm_stat": -2.216693540572976,
+    "p_value": 0.026644040495841237
+  }
+}

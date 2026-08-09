@@ -6,6 +6,8 @@ data/cache/
 results/predictions/
 results/interpretability/
 results/figures/*.png
+results/checkpoints/
+results_graphfix/
 *.egg-info/
 .ipynb_checkpoints/
 paper/*.aux

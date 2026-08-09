@@ -43,6 +43,12 @@ model:
   temporal_layers: 2
   dropout: 0.1
   graph_type: "learned"  # learned, correlation
+  # OFF by default (False = unchanged verified-pipeline behavior). When
+  # True, L2-normalizes the graph embeddings (emb1/emb2) to unit norm
+  # before the bilinear dot product in FrequencyGraphConstructor, so the
+  # adjacency logits become cosine similarities immune to the embedding
+  # norm collapse diagnosed in STATUS.md ("Adjacency Collapse Diagnosed").
+  normalize_graph_embeddings: false
 
 training:
   batch_size: 32
@@ -52,6 +58,13 @@ training:
   patience: 20
   scheduler: "cosine"
   seed: 42
+  # OFF by default (False = unchanged verified-pipeline behavior). When
+  # True, excludes FrequencyGraphConstructor's emb1/emb2 parameters from
+  # Adam's weight_decay, targeting the root cause in STATUS.md
+  # ("Adjacency Collapse Diagnosed"): coupled L2 decay pulls these
+  # embeddings toward zero faster than the weak task gradient can resist,
+  # collapsing the learned adjacency to uniform (1/N).
+  no_decay_graph_embeddings: false
 
 # Hyperparameter optimization (Optuna, TPE + median pruning) -- opt-in, and
 # scoped to VMD-MFGNN (the proposed model) ONLY. The 6 locked baselines

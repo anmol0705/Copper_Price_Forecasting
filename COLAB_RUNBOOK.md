@@ -24,7 +24,7 @@ which is data-dependent and cannot be predicted exactly.
 | LSTM / Transformer / SimpleMTGNN / VMD-LSTM (each) | 5-20 min each | Similar order of magnitude to VMD-MFGNN |
 | XGBoost | 2-8 min | One `XGBRegressor` per horizon (4 total), CPU-bound |
 | ARIMA | 5-20 min | Walk-forward: refits a small ARIMA(p,d,q) per test-window (~750+ windows), CPU-bound; possibly the slowest baseline |
-| Ablations (4 variants) | 30-90 min total | Same order as individual training runs |
+| Ablations (6 variants -- 3 studies, 2 run capacity-matched and -unmatched) | 45-135 min total | Same order as individual training runs, x1.5 variant count vs. the original 4-variant design |
 | Significance tests + figure generation | 1-5 min | Cheap, CPU-bound |
 | **Total, rough (HPO off)** | **~2-5 hours** | Dominated by early-stopping epoch counts and VMD's fixed CPU cost, neither precisely predictable ahead of time. Budget for at least one Colab disconnect. |
 | **Total, rough (HPO on)** | **~2.5-6 hours** | Adds the HPO stage above on top of the HPO-off total. |
@@ -76,13 +76,20 @@ no `checkpoint_path` parameter.
   of recomputing. If the raw price CSV was already downloaded, that's reused
   too. Worst case (nothing on Drive yet), you only lose this stage's
   progress.
-- **During the optional HPO stage:** `run_hpo()` itself has no resume/
-  checkpoint support (its trials are short relative to the main training
-  runs, so this hasn't been needed) — if interrupted, re-run the STEP 1.5
-  HPO cell and it restarts the whole search from trial 0. If you'd rather
-  not lose partial progress, disable HPO for the retry (`hpo.enabled: false`
-  in `configs/default.yaml`) and use its default `model:`/`training:` values
-  instead.
+- **During the optional HPO stage:** `run_hpo()` itself has no internal
+  trial-by-trial checkpointing, but the STEP 1.5 HPO cell is resume-aware at
+  the whole-search level: it checks whether `results/hpo_best_params.json`
+  already exists on disk (e.g. restored from Drive by `restore_from_drive()`
+  earlier in the notebook) before calling `run_hpo()`. If found, it loads the
+  previously-completed winner directly (logged as `[resume] Found existing
+  results/hpo_best_params.json ...`) and skips the search entirely — a
+  disconnect *after* HPO finished and synced to Drive costs nothing on
+  re-run. If interrupted mid-search (no `hpo_best_params.json` on disk yet),
+  re-running the HPO cell restarts the whole search from trial 0 — Optuna's
+  own trial state isn't persisted, so there is no mid-search resume. If
+  you'd rather not lose partial progress, disable HPO for the retry
+  (`hpo.enabled: false` in `configs/default.yaml`) and use its default
+  `model:`/`training:` values instead.
 - **During training stage:** Re-run the STEP 2 training cell. VMD-MFGNN is
   resumed via `VMDMFGNNTrainer.fit(checkpoint_path=...)` (see "Checkpointing"
   above): if `results/checkpoints/vmd_mfgnn.pt` already exists (e.g.
@@ -99,16 +106,20 @@ no `checkpoint_path` parameter.
   underlying building blocks (`VMDMFGNNTrainer`, `run_baseline`, same model
   classes and `base_cfg`) in a resumable loop instead, without modifying
   `src/trainer.py`.
-- **During ablation stage:** Same idea. Each of the 4 ablation variants
-  (`full_model`, `no_vmd_raw_price`, `pooled_graph`, `correlation_graph`) is
-  checkpointed via `VMDMFGNNTrainer.fit(checkpoint_path=...)` pointed at
+- **During ablation stage:** Same idea. Each of the 6 ablation variants
+  (`full_model`, `no_vmd_raw_price_matched_dim`,
+  `no_vmd_raw_price_matched_params`, `pooled_graph_matched_dim`,
+  `pooled_graph_matched_params`, `correlation_graph` — the pooled-graph and
+  no-VMD ablations each run twice, at a capacity-unmatched and a
+  capacity-matched `hidden_dim`, per the post-review capacity-matching fix)
+  is checkpointed via `VMDMFGNNTrainer.fit(checkpoint_path=...)` pointed at
   `results/checkpoints/{name}.pt` (the same paths `run_ablation_studies()`
   itself uses), then `results/` is synced to Drive right after each variant
   finishes. `run_ablation_studies()` in `src/trainer.py` has no per-variant
   checkpointing of its own (only one `save_results()` call at the very end),
-  so the notebook reimplements its 4 variants inline — importing the exact
-  same classes it uses (`VMDMFGNN`, `PooledGraphMFGNN`,
-  `_UnsqueezeModeWrapper`, `VMDMFGNNTrainer`).
+  so the notebook reimplements its 6 variants inline — importing the exact
+  same helpers it uses (`VMDMFGNN`, `PooledGraphMFGNN`, `count_parameters`,
+  `_UnsqueezeModeWrapper`, `_find_matched_hidden_dim`, `VMDMFGNNTrainer`).
 - **During figures/significance stage:** Cheap to just re-run; nothing here
   is individually checkpointed since the whole stage should take well under
   5 minutes once the model and predictions already exist.
@@ -144,7 +155,7 @@ no `checkpoint_path` parameter.
    uploaded/cloned copy) before running, not in the notebook. To opt into
    HPO, set `hpo.enabled: true` in that same file before running.
 4. **HPO tunes VMD-MFGNN only** (see the notebook's STEP 1.5 markdown cell
-   and `src/hpo.py`'s module docstring) — the 6 locked baselines and all 4
+   and `src/hpo.py`'s module docstring) — the 6 locked baselines and all 6
    ablation variants are never tuned by HPO. This is a deliberate, disclosed
    scope limitation, not an oversight. HPO trial results (for reporting in
    the paper) are saved to `results/hpo_best_params.json` (winning

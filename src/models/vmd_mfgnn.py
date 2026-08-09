@@ -12,7 +12,8 @@ class FrequencyGraphConstructor(nn.Module):
     """Constructs per-frequency-band adjacency matrices."""
 
     def __init__(self, num_vars: int, embed_dim: int = 16,
-                 graph_type: str = "learned", topk: Optional[int] = None):
+                 graph_type: str = "learned", topk: Optional[int] = None,
+                 normalize_embeddings: bool = False):
         super().__init__()
         self.num_vars = num_vars
         self.graph_type = graph_type
@@ -20,6 +21,14 @@ class FrequencyGraphConstructor(nn.Module):
         # edges (~half connectivity) so the learned graph is a meaningfully
         # sparse structure instead of the fully-connected softmax output.
         self.topk = topk if topk is not None else max(1, num_vars // 2)
+        # OFF by default (unchanged behavior). When True, L2-normalizes
+        # emb1/emb2 to unit norm before the bilinear dot product, turning
+        # the adjacency logits into cosine similarities. This is one of two
+        # fixes (see STATUS.md "Adjacency Collapse Diagnosed") for the
+        # isotropic norm collapse of these embeddings under Adam's coupled
+        # weight decay: with unit-norm embeddings the softmax spread can no
+        # longer be washed out just by the optimizer shrinking ||emb||.
+        self.normalize_embeddings = normalize_embeddings
 
         if graph_type == "learned":
             self.emb1 = nn.Embedding(num_vars, embed_dim)
@@ -53,6 +62,9 @@ class FrequencyGraphConstructor(nn.Module):
             idx = torch.arange(self.num_vars, device=self.emb1.weight.device)
             e1 = self.emb1(idx)  # (N, d)
             e2 = self.emb2(idx)  # (N, d)
+            if self.normalize_embeddings:
+                e1 = F.normalize(e1, dim=-1)
+                e2 = F.normalize(e2, dim=-1)
             adj = torch.softmax(F.relu(e1 @ e2.T), dim=-1)  # (N, N)
             # Scope sparsification to the learned-graph path only — the
             # correlation-graph path is already sparse via its own
@@ -68,6 +80,9 @@ class FrequencyGraphConstructor(nn.Module):
             idx = torch.arange(self.num_vars, device=self.emb1.weight.device)
             e1 = self.emb1(idx)
             e2 = self.emb2(idx)
+            if self.normalize_embeddings:
+                e1 = F.normalize(e1, dim=-1)
+                e2 = F.normalize(e2, dim=-1)
             adj = torch.softmax(F.relu(e1 @ e2.T), dim=-1)
             return self._topk_sparsify(adj)
 
@@ -214,7 +229,8 @@ class VMDMFGNN(nn.Module):
                  num_heads: int = 4, num_gnn_layers: int = 2,
                  temporal_layers: int = 2, dropout: float = 0.1,
                  horizons: List[int] = [1, 5, 10, 22],
-                 graph_type: str = "learned"):
+                 graph_type: str = "learned",
+                 normalize_graph_embeddings: bool = False):
         super().__init__()
         self.num_vars = num_vars
         self.num_modes = num_modes
@@ -223,7 +239,8 @@ class VMDMFGNN(nn.Module):
 
         # Per-band graph constructors
         self.graph_constructors = nn.ModuleList([
-            FrequencyGraphConstructor(num_vars, embed_dim=16, graph_type=graph_type)
+            FrequencyGraphConstructor(num_vars, embed_dim=16, graph_type=graph_type,
+                                       normalize_embeddings=normalize_graph_embeddings)
             for _ in range(num_modes)
         ])
 

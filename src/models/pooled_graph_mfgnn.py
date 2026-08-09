@@ -39,7 +39,8 @@ class PooledGraphMFGNN(nn.Module):
                  num_heads: int = 4, num_gnn_layers: int = 2,
                  temporal_layers: int = 2, dropout: float = 0.1,
                  horizons: List[int] = [1, 5, 10, 22],
-                 graph_type: str = "learned"):
+                 graph_type: str = "learned",
+                 normalize_graph_embeddings: bool = False):
         super().__init__()
         self.num_vars = num_vars
         self.num_modes = num_modes
@@ -56,7 +57,8 @@ class PooledGraphMFGNN(nn.Module):
         # not once per band). Reuses the same learned softmax adjacency
         # mechanism as the per-band model's graph_type="learned" path.
         self.graph_constructor = FrequencyGraphConstructor(
-            num_vars, embed_dim=16, graph_type=graph_type)
+            num_vars, embed_dim=16, graph_type=graph_type,
+            normalize_embeddings=normalize_graph_embeddings)
 
         # Single GAT+LSTM processing module (structurally identical to one
         # of VMDMFGNN's per-band FrequencyBandModule instances).

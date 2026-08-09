@@ -1,0 +1,1278 @@
+{
+  "horizons": [
+    1,
+    5,
+    10,
+    22
+  ],
+  "null_baselines": {
+    "h1": {
+      "random_walk_zero_forecast": {
+        "rmse": 0.017857806757092476,
+        "mae": 0.011954949237406254,
+        "up_day_frequency_pct": 51.016260162601625,
+        "down_day_frequency_pct": 48.3739837398374,
+        "zero_day_frequency_pct": 0.6097560975609756,
+        "n": 984,
+        "note": "DA is not meaningful for a constant-zero prediction; up_day_frequency_pct is the correct DA null to compare every real model's DA against."
+      },
+      "historical_mean": {
+        "available": false,
+        "reason": "Training-period true targets are not saved by run_baseline()/run_all_experiments() -- only test predictions/true values land under results/predictions/. Pass --train-targets-dir pointing at pre-saved {h}_true.npy files (training split) to enable this baseline. See this script's module docstring for the exact snippet to save them from a Colab session."
+      }
+    },
+    "h5": {
+      "random_walk_zero_forecast": {
+        "rmse": 0.03989406302571297,
+        "mae": 0.027857568114995956,
+        "up_day_frequency_pct": 53.04878048780488,
+        "down_day_frequency_pct": 46.95121951219512,
+        "zero_day_frequency_pct": 0.0,
+        "n": 984,
+        "note": "DA is not meaningful for a constant-zero prediction; up_day_frequency_pct is the correct DA null to compare every real model's DA against."
+      },
+      "historical_mean": {
+        "available": false,
+        "reason": "Training-period true targets are not saved by run_baseline()/run_all_experiments() -- only test predictions/true values land under results/predictions/. Pass --train-targets-dir pointing at pre-saved {h}_true.npy files (training split) to enable this baseline. See this script's module docstring for the exact snippet to save them from a Colab session."
+      }
+    },
+    "h10": {
+      "random_walk_zero_forecast": {
+        "rmse": 0.05518695339560509,
+        "mae": 0.03968757390975952,
+        "up_day_frequency_pct": 55.386178861788615,
+        "down_day_frequency_pct": 44.207317073170735,
+        "zero_day_frequency_pct": 0.40650406504065045,
+        "n": 984,
+        "note": "DA is not meaningful for a constant-zero prediction; up_day_frequency_pct is the correct DA null to compare every real model's DA against."
+      },
+      "historical_mean": {
+        "available": false,
+        "reason": "Training-period true targets are not saved by run_baseline()/run_all_experiments() -- only test predictions/true values land under results/predictions/. Pass --train-targets-dir pointing at pre-saved {h}_true.npy files (training split) to enable this baseline. See this script's module docstring for the exact snippet to save them from a Colab session."
+      }
+    },
+    "h22": {
+      "random_walk_zero_forecast": {
+        "rmse": 0.07588544487953186,
+        "mae": 0.05712918937206268,
+        "up_day_frequency_pct": 55.28455284552846,
+        "down_day_frequency_pct": 44.71544715447154,
+        "zero_day_frequency_pct": 0.0,
+        "n": 984,
+        "note": "DA is not meaningful for a constant-zero prediction; up_day_frequency_pct is the correct DA null to compare every real model's DA against."
+      },
+      "historical_mean": {
+        "available": false,
+        "reason": "Training-period true targets are not saved by run_baseline()/run_all_experiments() -- only test predictions/true values land under results/predictions/. Pass --train-targets-dir pointing at pre-saved {h}_true.npy files (training split) to enable this baseline. See this script's module docstring for the exact snippet to save them from a Colab session."
+      }
+    }
+  },
+  "models": {
+    "ARIMA": {
+      "h1": {
+        "da_pct": 49.390243902439025,
+        "da_minus_up_day_frequency": -1.6260162601626007,
+        "da_minus_50": -0.6097560975609753,
+        "pesaran_timmermann": {
+          "pt_stat": -0.20834114997682482,
+          "p_value": 0.8349626034734947,
+          "p_hat": 49.69512195121951,
+          "p_star": 50.026852402670364,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.00013219979697109884,
+          "std_return_per_period": 0.0178663980047431,
+          "periods_per_year_assumed": 252.0,
+          "annualized_return_pct": 3.331434883671691,
+          "annualized_vol_pct": 28.362027567030506,
+          "sharpe_ratio_annualized": 0.11746109744087281,
+          "max_drawdown": -0.644410303546465,
+          "hit_rate_pct": 49.390243902439025,
+          "turnover_fraction": 0.5167853509664293,
+          "breakeven_cost_bps_per_round_trip": 2.5581181185549244,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h5": {
+        "da_pct": 48.67886178861789,
+        "da_minus_up_day_frequency": -4.3699186991869965,
+        "da_minus_50": -1.321138211382113,
+        "pesaran_timmermann": {
+          "pt_stat": -0.8817845999875938,
+          "p_value": 0.37789330111650354,
+          "p_hat": 48.67886178861789,
+          "p_star": 50.0805572080111,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0006551478525032848,
+          "std_return_per_period": 0.03990896619638278,
+          "periods_per_year_assumed": 50.4,
+          "annualized_return_pct": -3.301945176616555,
+          "annualized_vol_pct": 28.33255536945914,
+          "sharpe_ratio_annualized": -0.11654244149738295,
+          "max_drawdown": -1.5949997990828706,
+          "hit_rate_pct": 48.67886178861789,
+          "turnover_fraction": 0.5167853509664293,
+          "breakeven_cost_bps_per_round_trip": -12.677368878163955,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h10": {
+        "da_pct": 49.28861788617886,
+        "da_minus_up_day_frequency": -6.097560975609753,
+        "da_minus_50": -0.7113821138211378,
+        "pesaran_timmermann": {
+          "pt_stat": -0.4750015878750508,
+          "p_value": 0.6347858415015764,
+          "p_hat": 49.390243902439025,
+          "p_star": 50.142317734152954,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0014434864390388271,
+          "std_return_per_period": 0.05519612379633749,
+          "periods_per_year_assumed": 25.2,
+          "annualized_return_pct": -3.637585826377844,
+          "annualized_vol_pct": 27.70823424001311,
+          "sharpe_ratio_annualized": -0.13128176248506135,
+          "max_drawdown": -2.3663528363395017,
+          "hit_rate_pct": 49.28861788617886,
+          "turnover_fraction": 0.5167853509664293,
+          "breakeven_cost_bps_per_round_trip": -27.93203089714896,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h22": {
+        "da_pct": 49.89837398373984,
+        "da_minus_up_day_frequency": -5.386178861788622,
+        "da_minus_50": -0.10162601626016254,
+        "pesaran_timmermann": {
+          "pt_stat": -0.15234280524156243,
+          "p_value": 0.8789165652025832,
+          "p_hat": 49.89837398373984,
+          "p_star": 50.13963249388591,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0016509412081081162,
+          "std_return_per_period": 0.07590606374893907,
+          "periods_per_year_assumed": 11.454545454545455,
+          "annualized_return_pct": -1.8910781111056603,
+          "annualized_vol_pct": 25.69007669662121,
+          "sharpe_ratio_annualized": -0.07361122870273007,
+          "max_drawdown": -3.043577200965956,
+          "hit_rate_pct": 49.89837398373984,
+          "turnover_fraction": 0.5167853509664293,
+          "breakeven_cost_bps_per_round_trip": -31.946362353745634,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      }
+    },
+    "LSTM": {
+      "h1": {
+        "da_pct": 48.67886178861789,
+        "da_minus_up_day_frequency": -2.3373983739837385,
+        "da_minus_50": -1.321138211382113,
+        "pesaran_timmermann": {
+          "pt_stat": -0.015894847426847807,
+          "p_value": 0.9873182806420302,
+          "p_hat": 49.1869918699187,
+          "p_star": 49.202690197633686,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.00024110467347782105,
+          "std_return_per_period": 0.01786525920033455,
+          "periods_per_year_assumed": 252.0,
+          "annualized_return_pct": 6.0758377716410905,
+          "annualized_vol_pct": 28.360219771076324,
+          "sharpe_ratio_annualized": 0.21423803555421114,
+          "max_drawdown": -0.5688820481300354,
+          "hit_rate_pct": 48.67886178861789,
+          "turnover_fraction": 0.01017293997965412,
+          "breakeven_cost_bps_per_round_trip": 237.0058940286981,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h5": {
+        "da_pct": 53.65853658536586,
+        "da_minus_up_day_frequency": 0.6097560975609753,
+        "da_minus_50": 3.6585365853658587,
+        "pesaran_timmermann": {
+          "pt_stat": 2.068902170662043,
+          "p_value": 0.038555267862522724,
+          "p_hat": 53.65853658536586,
+          "p_star": 50.39658933174698,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.00241169985383749,
+          "std_return_per_period": 0.03984134644269943,
+          "periods_per_year_assumed": 50.4,
+          "annualized_return_pct": 12.15496726334095,
+          "annualized_vol_pct": 28.284550106534635,
+          "sharpe_ratio_annualized": 0.42973875198859063,
+          "max_drawdown": -1.3389266729354858,
+          "hit_rate_pct": 53.65853658536586,
+          "turnover_fraction": 0.024415055951169887,
+          "breakeven_cost_bps_per_round_trip": 987.792065134272,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h10": {
+        "da_pct": 45.22357723577235,
+        "da_minus_up_day_frequency": -10.162601626016261,
+        "da_minus_50": -4.776422764227647,
+        "pesaran_timmermann": {
+          "pt_stat": 1.6557059905196638,
+          "p_value": 0.09778137357343675,
+          "p_hat": 45.63008130081301,
+          "p_star": 44.85466653447022,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0008848638972267509,
+          "std_return_per_period": 0.05520791560411453,
+          "periods_per_year_assumed": 25.2,
+          "annualized_return_pct": -2.229857021011412,
+          "annualized_vol_pct": 27.714153680537677,
+          "sharpe_ratio_annualized": -0.0804591418058468,
+          "max_drawdown": -5.361084461212158,
+          "hit_rate_pct": 45.22357723577235,
+          "turnover_fraction": 0.004069175991861648,
+          "breakeven_cost_bps_per_round_trip": -2174.55302743474,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h22": {
+        "da_pct": 45.9349593495935,
+        "da_minus_up_day_frequency": -9.349593495934961,
+        "da_minus_50": -4.065040650406502,
+        "pesaran_timmermann": {
+          "pt_stat": 2.4168479173129507,
+          "p_value": 0.015655556700868933,
+          "p_hat": 45.9349593495935,
+          "p_star": 44.90878445369819,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0033644132781773806,
+          "std_return_per_period": 0.07584937661886215,
+          "periods_per_year_assumed": 11.454545454545455,
+          "annualized_return_pct": -3.853782482275909,
+          "annualized_vol_pct": 25.670891184325328,
+          "sharpe_ratio_annualized": -0.15012266051086814,
+          "max_drawdown": -10.469193458557129,
+          "hit_rate_pct": 45.9349593495935,
+          "turnover_fraction": 0.002034587995930824,
+          "breakeven_cost_bps_per_round_trip": -16536.091262241825,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      }
+    },
+    "SimpleMTGNN": {
+      "h1": {
+        "da_pct": 48.27235772357724,
+        "da_minus_up_day_frequency": -2.7439024390243887,
+        "da_minus_50": -1.7276422764227632,
+        "pesaran_timmermann": {
+          "pt_stat": -0.6106368232611818,
+          "p_value": 0.5414400390947962,
+          "p_hat": 48.67886178861789,
+          "p_star": 49.55177143234847,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0001194354408653453,
+          "std_return_per_period": 0.01786648854613304,
+          "periods_per_year_assumed": 252.0,
+          "annualized_return_pct": -3.0097731098067015,
+          "annualized_vol_pct": 28.362171297031193,
+          "sharpe_ratio_annualized": -0.10611927691593026,
+          "max_drawdown": -0.6940291523933411,
+          "hit_rate_pct": 48.27235772357724,
+          "turnover_fraction": 0.2685656154628688,
+          "breakeven_cost_bps_per_round_trip": -4.447160544342213,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h5": {
+        "da_pct": 47.256097560975604,
+        "da_minus_up_day_frequency": -5.792682926829279,
+        "da_minus_50": -2.743902439024396,
+        "pesaran_timmermann": {
+          "pt_stat": 1.632789502135698,
+          "p_value": 0.10251327571288638,
+          "p_hat": 47.256097560975604,
+          "p_star": 46.96980963712076,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0005751964636147022,
+          "std_return_per_period": 0.039910200983285904,
+          "periods_per_year_assumed": 50.4,
+          "annualized_return_pct": -2.898990176618099,
+          "annualized_vol_pct": 28.33343198119922,
+          "sharpe_ratio_annualized": -0.1023169441154089,
+          "max_drawdown": -2.6588354110717773,
+          "hit_rate_pct": 47.256097560975604,
+          "turnover_fraction": 0.004069175991861648,
+          "breakeven_cost_bps_per_round_trip": -1413.5453093331307,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h10": {
+        "da_pct": 44.51219512195122,
+        "da_minus_up_day_frequency": -10.873983739837392,
+        "da_minus_50": -5.487804878048777,
+        "pesaran_timmermann": {
+          "pt_stat": 1.5576808192009117,
+          "p_value": 0.11930892956601702,
+          "p_hat": 44.918699186991866,
+          "p_star": 44.646663692246676,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0012379658874124289,
+          "std_return_per_period": 0.055201124399900436,
+          "periods_per_year_assumed": 25.2,
+          "annualized_return_pct": -3.1196740362793207,
+          "annualized_vol_pct": 27.7107445230789,
+          "sharpe_ratio_annualized": -0.11257994290557943,
+          "max_drawdown": -4.836599826812744,
+          "hit_rate_pct": 44.51219512195122,
+          "turnover_fraction": 0.004069175991861648,
+          "breakeven_cost_bps_per_round_trip": -3042.301168316044,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h22": {
+        "da_pct": 47.764227642276424,
+        "da_minus_up_day_frequency": -7.520325203252035,
+        "da_minus_50": -2.235772357723576,
+        "pesaran_timmermann": {
+          "pt_stat": 4.4753052182469135,
+          "p_value": 7.63022328031937e-06,
+          "p_hat": 47.764227642276424,
+          "p_star": 45.102121752924845,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.0005386830307543278,
+          "std_return_per_period": 0.07592212408781052,
+          "periods_per_year_assumed": 11.454545454545455,
+          "annualized_return_pct": 0.6170369261367755,
+          "annualized_vol_pct": 25.695512248367724,
+          "sharpe_ratio_annualized": 0.02401341215433337,
+          "max_drawdown": -9.218335151672363,
+          "hit_rate_pct": 47.764227642276424,
+          "turnover_fraction": 0.012207527975584944,
+          "breakeven_cost_bps_per_round_trip": 441.2711826929202,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      }
+    },
+    "Transformer": {
+      "h1": {
+        "da_pct": 51.93089430894309,
+        "da_minus_up_day_frequency": 0.9146341463414629,
+        "da_minus_50": 1.9308943089430883,
+        "pesaran_timmermann": {
+          "pt_stat": 1.163764763125892,
+          "p_value": 0.2445193556888321,
+          "p_hat": 52.03252032520326,
+          "p_star": 50.71468702491902,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.000653191062156111,
+          "std_return_per_period": 0.017854930832982063,
+          "periods_per_year_assumed": 252.0,
+          "annualized_return_pct": 16.460414766333997,
+          "annualized_vol_pct": 28.343823996197926,
+          "sharpe_ratio_annualized": 0.5807407909582707,
+          "max_drawdown": -0.29131248593330383,
+          "hit_rate_pct": 51.93089430894309,
+          "turnover_fraction": 0.001017293997965412,
+          "breakeven_cost_bps_per_round_trip": 6420.868140994571,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h5": {
+        "da_pct": 53.04878048780488,
+        "da_minus_up_day_frequency": 0.0,
+        "da_minus_50": 3.0487804878048834,
+        "pesaran_timmermann": {
+          "pt_stat": NaN,
+          "p_value": NaN,
+          "p_hat": 53.04878048780488,
+          "p_star": 53.04878048780488,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.0008725639199838042,
+          "std_return_per_period": 0.039904799312353134,
+          "periods_per_year_assumed": 50.4,
+          "annualized_return_pct": 4.397722156718373,
+          "annualized_vol_pct": 28.329597175255184,
+          "sharpe_ratio_annualized": 0.15523419304244876,
+          "max_drawdown": -1.8541197776794434,
+          "hit_rate_pct": 53.04878048780488,
+          "turnover_fraction": 0.0,
+          "breakeven_cost_bps_per_round_trip": NaN,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h10": {
+        "da_pct": 52.743902439024396,
+        "da_minus_up_day_frequency": -2.642276422764219,
+        "da_minus_50": 2.743902439024396,
+        "pesaran_timmermann": {
+          "pt_stat": 2.477720701488944,
+          "p_value": 0.013222460462784191,
+          "p_hat": 52.947154471544714,
+          "p_star": 49.0804084870117,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.0017075403593480587,
+          "std_return_per_period": 0.05518857762217522,
+          "periods_per_year_assumed": 25.2,
+          "annualized_return_pct": 4.303001705557108,
+          "annualized_vol_pct": 27.704446090648204,
+          "sharpe_ratio_annualized": 0.15531809195815727,
+          "max_drawdown": -4.024901866912842,
+          "hit_rate_pct": 52.743902439024396,
+          "turnover_fraction": 0.002034587995930824,
+          "breakeven_cost_bps_per_round_trip": 8392.560866195709,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h22": {
+        "da_pct": 44.71544715447154,
+        "da_minus_up_day_frequency": -10.569105691056919,
+        "da_minus_50": -5.284552845528459,
+        "pesaran_timmermann": {
+          "pt_stat": -1.1467565479788437,
+          "p_value": 0.2514822522525104,
+          "p_hat": 44.71544715447154,
+          "p_star": 45.83250710555886,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.00837062206119299,
+          "std_return_per_period": 0.07546072453260422,
+          "periods_per_year_assumed": 11.454545454545455,
+          "annualized_return_pct": -9.588167088275606,
+          "annualized_vol_pct": 25.539353578353662,
+          "sharpe_ratio_annualized": -0.3754271641550955,
+          "max_drawdown": -10.469195365905762,
+          "hit_rate_pct": 44.71544715447154,
+          "turnover_fraction": 0.001017293997965412,
+          "breakeven_cost_bps_per_round_trip": -82283.21486152709,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      }
+    },
+    "VMD-LSTM": {
+      "h1": {
+        "da_pct": 48.88211382113821,
+        "da_minus_up_day_frequency": -2.1341463414634134,
+        "da_minus_50": -1.117886178861788,
+        "pesaran_timmermann": {
+          "pt_stat": 0.5543543956557089,
+          "p_value": 0.5793363300417875,
+          "p_hat": 49.49186991869919,
+          "p_star": 49.09321501751604,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -1.8551823814050294e-05,
+          "std_return_per_period": 0.01786687783896923,
+          "periods_per_year_assumed": 252.0,
+          "annualized_return_pct": -0.4675059601140674,
+          "annualized_vol_pct": 28.362789280250233,
+          "sharpe_ratio_annualized": -0.016483074196077193,
+          "max_drawdown": -0.511623740196228,
+          "hit_rate_pct": 48.88211382113821,
+          "turnover_fraction": 0.03458799593082401,
+          "breakeven_cost_bps_per_round_trip": -5.363659649768071,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h5": {
+        "da_pct": 49.49186991869919,
+        "da_minus_up_day_frequency": -3.556910569105696,
+        "da_minus_50": -0.5081300813008127,
+        "pesaran_timmermann": {
+          "pt_stat": 0.5369481496131477,
+          "p_value": 0.5913034302594038,
+          "p_hat": 49.49186991869919,
+          "p_star": 48.71728138013087,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.0005231728428043425,
+          "std_return_per_period": 0.03991091623902321,
+          "periods_per_year_assumed": 50.4,
+          "annualized_return_pct": 2.6367911277338862,
+          "annualized_vol_pct": 28.333939762400085,
+          "sharpe_ratio_annualized": 0.09306122444831977,
+          "max_drawdown": -1.6708130836486816,
+          "hit_rate_pct": 49.49186991869919,
+          "turnover_fraction": 0.16378433367243134,
+          "breakeven_cost_bps_per_round_trip": 31.942789097929733,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h10": {
+        "da_pct": 51.52439024390244,
+        "da_minus_up_day_frequency": -3.8617886178861767,
+        "da_minus_50": 1.5243902439024382,
+        "pesaran_timmermann": {
+          "pt_stat": 0.9186625381284882,
+          "p_value": 0.35827211012638305,
+          "p_hat": 51.93089430894309,
+          "p_star": 50.48169079251769,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0011487059528008103,
+          "std_return_per_period": 0.05520305410027504,
+          "periods_per_year_assumed": 25.2,
+          "annualized_return_pct": -2.894739001058042,
+          "annualized_vol_pct": 27.711713224978872,
+          "sharpe_ratio_annualized": -0.10445904147307547,
+          "max_drawdown": -3.389448881149292,
+          "hit_rate_pct": 51.52439024390244,
+          "turnover_fraction": 0.11698880976602238,
+          "breakeven_cost_bps_per_round_trip": -98.18938709593014,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h22": {
+        "da_pct": 48.88211382113821,
+        "da_minus_up_day_frequency": -6.402439024390247,
+        "da_minus_50": -1.117886178861788,
+        "pesaran_timmermann": {
+          "pt_stat": 2.422843157779493,
+          "p_value": 0.015399573739705907,
+          "p_hat": 48.88211382113821,
+          "p_star": 46.20844074294401,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.0005390009027905762,
+          "std_return_per_period": 0.07592211663722992,
+          "periods_per_year_assumed": 11.454545454545455,
+          "annualized_return_pct": 0.6174010341055691,
+          "annualized_vol_pct": 25.695509726751165,
+          "sharpe_ratio_annualized": 0.024027584611906072,
+          "max_drawdown": -8.446516990661621,
+          "hit_rate_pct": 48.88211382113821,
+          "turnover_fraction": 0.052899287894201424,
+          "breakeven_cost_bps_per_round_trip": 101.89190143137239,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      }
+    },
+    "VMD-MFGNN": {
+      "h1": {
+        "da_pct": 48.47560975609756,
+        "da_minus_up_day_frequency": -2.5406504065040636,
+        "da_minus_50": -1.5243902439024382,
+        "pesaran_timmermann": {
+          "pt_stat": -0.27058615164595345,
+          "p_value": 0.7867093480069416,
+          "p_hat": 48.983739837398375,
+          "p_star": 49.2935752528257,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -7.278370321728289e-05,
+          "std_return_per_period": 0.017866740003228188,
+          "periods_per_year_assumed": 252.0,
+          "annualized_return_pct": -1.8341493210755289,
+          "annualized_vol_pct": 28.36257047279469,
+          "sharpe_ratio_annualized": -0.06466795112364167,
+          "max_drawdown": -0.5571495294570923,
+          "hit_rate_pct": 48.47560975609756,
+          "turnover_fraction": 0.06917599186164802,
+          "breakeven_cost_bps_per_round_trip": -10.521526509204275,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h5": {
+        "da_pct": 49.59349593495935,
+        "da_minus_up_day_frequency": -3.4552845528455336,
+        "da_minus_50": -0.4065040650406502,
+        "pesaran_timmermann": {
+          "pt_stat": 0.8572477642969627,
+          "p_value": 0.39130797023073915,
+          "p_hat": 49.59349593495935,
+          "p_star": 48.426036089629186,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.0015483566094189882,
+          "std_return_per_period": 0.03988427668809891,
+          "periods_per_year_assumed": 50.4,
+          "annualized_return_pct": 7.8037173114717,
+          "annualized_vol_pct": 28.315027557361596,
+          "sharpe_ratio_annualized": 0.2756033804192015,
+          "max_drawdown": -1.2839815616607666,
+          "hit_rate_pct": 49.59349593495935,
+          "turnover_fraction": 0.08850457782299084,
+          "breakeven_cost_bps_per_round_trip": 174.94649966193856,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h10": {
+        "da_pct": 46.646341463414636,
+        "da_minus_up_day_frequency": -8.739837398373979,
+        "da_minus_50": -3.353658536585364,
+        "pesaran_timmermann": {
+          "pt_stat": 1.4401977233059031,
+          "p_value": 0.14981146716795113,
+          "p_hat": 47.052845528455286,
+          "p_star": 45.686677903364405,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.001206766813993454,
+          "std_return_per_period": 0.05520181357860565,
+          "periods_per_year_assumed": 25.2,
+          "annualized_return_pct": 3.041052371263504,
+          "annualized_vol_pct": 27.711090488043176,
+          "sharpe_ratio_annualized": 0.10974134607137391,
+          "max_drawdown": -3.863016128540039,
+          "hit_rate_pct": 46.646341463414636,
+          "turnover_fraction": 0.03458799593082401,
+          "breakeven_cost_bps_per_round_trip": 348.89758181046034,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h22": {
+        "da_pct": 48.06910569105691,
+        "da_minus_up_day_frequency": -7.215447154471548,
+        "da_minus_50": -1.9308943089430883,
+        "pesaran_timmermann": {
+          "pt_stat": -0.02012272109094392,
+          "p_value": 0.9839454750043282,
+          "p_hat": 48.06910569105691,
+          "p_star": 48.098849890937935,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0002978885022457689,
+          "std_return_per_period": 0.07592345029115677,
+          "periods_per_year_assumed": 11.454545454545455,
+          "annualized_return_pct": -0.3412177389360626,
+          "annualized_vol_pct": 25.6959610961145,
+          "sharpe_ratio_annualized": -0.013279041700746438,
+          "max_drawdown": -7.165595054626465,
+          "hit_rate_pct": 48.06910569105691,
+          "turnover_fraction": 0.08341810783316378,
+          "breakeven_cost_bps_per_round_trip": -35.71029240336474,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      }
+    },
+    "XGBoost": {
+      "h1": {
+        "da_pct": 46.84959349593496,
+        "da_minus_up_day_frequency": -4.166666666666664,
+        "da_minus_50": -3.150406504065039,
+        "pesaran_timmermann": {
+          "pt_stat": -1.6108429022989326,
+          "p_value": 0.10721396751523815,
+          "p_hat": 47.256097560975604,
+          "p_star": 49.526984599114286,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.0004751769592985511,
+          "std_return_per_period": 0.01786056160926819,
+          "periods_per_year_assumed": 252.0,
+          "annualized_return_pct": -11.974459374323487,
+          "annualized_vol_pct": 28.352762576442725,
+          "sharpe_ratio_annualized": -0.4223383644552729,
+          "max_drawdown": -0.7126526832580566,
+          "hit_rate_pct": 46.84959349593496,
+          "turnover_fraction": 0.05595116988809766,
+          "breakeven_cost_bps_per_round_trip": -84.92708199826832,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h5": {
+        "da_pct": 51.21951219512195,
+        "da_minus_up_day_frequency": -1.829268292682933,
+        "da_minus_50": 1.2195121951219505,
+        "pesaran_timmermann": {
+          "pt_stat": -1.3336823422488686,
+          "p_value": 0.18230798413014426,
+          "p_hat": 51.21951219512195,
+          "p_star": 52.466289906801514,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.0019407043000683188,
+          "std_return_per_period": 0.0398670919239521,
+          "periods_per_year_assumed": 50.4,
+          "annualized_return_pct": 9.781149672344327,
+          "annualized_vol_pct": 28.302827585072045,
+          "sharpe_ratio_annualized": 0.34558913391053786,
+          "max_drawdown": -1.8452532291412354,
+          "hit_rate_pct": 51.21951219512195,
+          "turnover_fraction": 0.05391658189216684,
+          "breakeven_cost_bps_per_round_trip": 359.945722069275,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h10": {
+        "da_pct": 48.78048780487805,
+        "da_minus_up_day_frequency": -6.605691056910565,
+        "da_minus_50": -1.2195121951219505,
+        "pesaran_timmermann": {
+          "pt_stat": -2.3052617563742257,
+          "p_value": 0.021151918017697557,
+          "p_hat": 48.88211382113821,
+          "p_star": 52.21139863837663,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": 0.002358489902690053,
+          "std_return_per_period": 0.05516456812620163,
+          "periods_per_year_assumed": 25.2,
+          "annualized_return_pct": 5.9433945547789335,
+          "annualized_vol_pct": 27.692393419325207,
+          "sharpe_ratio_annualized": 0.21462191674018763,
+          "max_drawdown": -3.619459390640259,
+          "hit_rate_pct": 48.78048780487805,
+          "turnover_fraction": 0.08646998982706001,
+          "breakeven_cost_bps_per_round_trip": 272.7524205110967,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      },
+      "h22": {
+        "da_pct": 42.68292682926829,
+        "da_minus_up_day_frequency": -12.60162601626017,
+        "da_minus_50": -7.31707317073171,
+        "pesaran_timmermann": {
+          "pt_stat": -3.234129720149165,
+          "p_value": 0.0012201402285643148,
+          "p_hat": 42.68292682926829,
+          "p_star": 46.62733822460176,
+          "n": 984
+        },
+        "economic_sanity_check": {
+          "n": 984,
+          "mean_return_per_period": -0.01002305094152689,
+          "std_return_per_period": 0.07525885105133057,
+          "periods_per_year_assumed": 11.454545454545455,
+          "annualized_return_pct": -11.480949260294437,
+          "annualized_vol_pct": 25.471030377797675,
+          "sharpe_ratio_annualized": -0.45074537975118717,
+          "max_drawdown": -10.706287384033203,
+          "hit_rate_pct": 42.68292682926829,
+          "turnover_fraction": 0.06510681586978637,
+          "breakeven_cost_bps_per_round_trip": -1539.4779805501457,
+          "note": "Lightweight sanity check only, no transaction costs in the primary Sharpe figure, non-overlapping-period annualization approximation -- see economic_sanity_check() docstring for full assumptions."
+        }
+      }
+    }
+  },
+  "holm_bonferroni": {
+    "DM::Transformer_h1": {
+      "p_raw": 0.0,
+      "rank": 1,
+      "p_holm": 0.0,
+      "significant_at_0.05": true
+    },
+    "DM::VMD-LSTM_h1": {
+      "p_raw": 0.0,
+      "rank": 2,
+      "p_holm": 0.0,
+      "significant_at_0.05": true
+    },
+    "DM::SimpleMTGNN_h5": {
+      "p_raw": 3.552713678800501e-15,
+      "rank": 3,
+      "p_holm": 1.7408297026122455e-13,
+      "significant_at_0.05": true
+    },
+    "PT::SimpleMTGNN_h22": {
+      "p_raw": 7.63022328031937e-06,
+      "rank": 4,
+      "p_holm": 0.0003662507174553298,
+      "significant_at_0.05": true
+    },
+    "DM::SimpleMTGNN_h10": {
+      "p_raw": 5.130569677280761e-05,
+      "rank": 5,
+      "p_holm": 0.0024113677483219575,
+      "significant_at_0.05": true
+    },
+    "DM::Transformer_h22": {
+      "p_raw": 0.00018842444896893795,
+      "rank": 6,
+      "p_holm": 0.008667524652571146,
+      "significant_at_0.05": true
+    },
+    "DM::LSTM_h10": {
+      "p_raw": 0.0003249407624130729,
+      "rank": 7,
+      "p_holm": 0.01462233430858828,
+      "significant_at_0.05": true
+    },
+    "DM::VMD-LSTM_h5": {
+      "p_raw": 0.0005313334230647726,
+      "rank": 8,
+      "p_holm": 0.023378670614849995,
+      "significant_at_0.05": true
+    },
+    "DM::Transformer_h5": {
+      "p_raw": 0.0009049423535798518,
+      "rank": 9,
+      "p_holm": 0.038912521203933625,
+      "significant_at_0.05": true
+    },
+    "PT::XGBoost_h22": {
+      "p_raw": 0.0012201402285643148,
+      "rank": 10,
+      "p_holm": 0.05124588959970122,
+      "significant_at_0.05": false
+    },
+    "DM::VMD-LSTM_h10": {
+      "p_raw": 0.007011273180931754,
+      "rank": 11,
+      "p_holm": 0.2874622004182019,
+      "significant_at_0.05": false
+    },
+    "DM::LSTM_h1": {
+      "p_raw": 0.011664200127695645,
+      "rank": 12,
+      "p_holm": 0.4665680051078258,
+      "significant_at_0.05": false
+    },
+    "PT::Transformer_h10": {
+      "p_raw": 0.013222460462784191,
+      "rank": 13,
+      "p_holm": 0.5156759580485835,
+      "significant_at_0.05": false
+    },
+    "DM::XGBoost_h1": {
+      "p_raw": 0.013943351458446385,
+      "rank": 14,
+      "p_holm": 0.5298473554209626,
+      "significant_at_0.05": false
+    },
+    "PT::VMD-LSTM_h22": {
+      "p_raw": 0.015399573739705907,
+      "rank": 15,
+      "p_holm": 0.5697842283691186,
+      "significant_at_0.05": false
+    },
+    "PT::LSTM_h22": {
+      "p_raw": 0.015655556700868933,
+      "rank": 16,
+      "p_holm": 0.5697842283691186,
+      "significant_at_0.05": false
+    },
+    "PT::XGBoost_h10": {
+      "p_raw": 0.021151918017697557,
+      "rank": 17,
+      "p_holm": 0.7403171306194145,
+      "significant_at_0.05": false
+    },
+    "DM::SimpleMTGNN_h22": {
+      "p_raw": 0.021195918076875042,
+      "rank": 18,
+      "p_holm": 0.7403171306194145,
+      "significant_at_0.05": false
+    },
+    "DM::VMD-LSTM_h22": {
+      "p_raw": 0.02664403965521167,
+      "rank": 19,
+      "p_holm": 0.8792533086219851,
+      "significant_at_0.05": false
+    },
+    "PT::LSTM_h5": {
+      "p_raw": 0.038555267862522724,
+      "rank": 20,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::LSTM_h10": {
+      "p_raw": 0.09778137357343675,
+      "rank": 21,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::SimpleMTGNN_h5": {
+      "p_raw": 0.10251327571288638,
+      "rank": 22,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::XGBoost_h1": {
+      "p_raw": 0.10721396751523815,
+      "rank": 23,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::SimpleMTGNN_h10": {
+      "p_raw": 0.11930892956601702,
+      "rank": 24,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::LSTM_h22": {
+      "p_raw": 0.13656556408968257,
+      "rank": 25,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::VMD-MFGNN_h10": {
+      "p_raw": 0.14981146716795113,
+      "rank": 26,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::XGBoost_h5": {
+      "p_raw": 0.18230798413014426,
+      "rank": 27,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::Transformer_h1": {
+      "p_raw": 0.2445193556888321,
+      "rank": 28,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::Transformer_h22": {
+      "p_raw": 0.2514822522525104,
+      "rank": 29,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::ARIMA_h1": {
+      "p_raw": 0.26658311912444344,
+      "rank": 30,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::Transformer_h10": {
+      "p_raw": 0.2708524087565458,
+      "rank": 31,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::LSTM_h5": {
+      "p_raw": 0.3114642800040335,
+      "rank": 32,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::VMD-LSTM_h10": {
+      "p_raw": 0.35827211012638305,
+      "rank": 33,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::ARIMA_h5": {
+      "p_raw": 0.37789330111650354,
+      "rank": 34,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::ARIMA_h22": {
+      "p_raw": 0.38615492171031995,
+      "rank": 35,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::SimpleMTGNN_h1": {
+      "p_raw": 0.3899298391325967,
+      "rank": 36,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::VMD-MFGNN_h5": {
+      "p_raw": 0.39130797023073915,
+      "rank": 37,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::XGBoost_h22": {
+      "p_raw": 0.43481092901060325,
+      "rank": 38,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::ARIMA_h5": {
+      "p_raw": 0.5197200393639134,
+      "rank": 39,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::SimpleMTGNN_h1": {
+      "p_raw": 0.5414400390947962,
+      "rank": 40,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::VMD-LSTM_h1": {
+      "p_raw": 0.5793363300417875,
+      "rank": 41,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::VMD-LSTM_h5": {
+      "p_raw": 0.5913034302594038,
+      "rank": 42,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::ARIMA_h10": {
+      "p_raw": 0.6347858415015764,
+      "rank": 43,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::VMD-MFGNN_h1": {
+      "p_raw": 0.7867093480069416,
+      "rank": 44,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::ARIMA_h1": {
+      "p_raw": 0.8349626034734947,
+      "rank": 45,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::ARIMA_h10": {
+      "p_raw": 0.8639621466178715,
+      "rank": 46,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::ARIMA_h22": {
+      "p_raw": 0.8789165652025832,
+      "rank": 47,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::XGBoost_h5": {
+      "p_raw": 0.8803816431526683,
+      "rank": 48,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "DM::XGBoost_h10": {
+      "p_raw": 0.9267618636950206,
+      "rank": 49,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::VMD-MFGNN_h22": {
+      "p_raw": 0.9839454750043282,
+      "rank": 50,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::LSTM_h1": {
+      "p_raw": 0.9873182806420302,
+      "rank": 51,
+      "p_holm": 1.0,
+      "significant_at_0.05": false
+    },
+    "PT::Transformer_h5": {
+      "p_raw": NaN,
+      "rank": null,
+      "p_holm": null,
+      "significant_at_0.05": false,
+      "note": "excluded from Holm family (NaN/degenerate p-value)"
+    },
+    "_meta": {
+      "family_size_m": 51
+    }
+  },
+  "dm_test_table_loaded": {
+    "ARIMA_h1": {
+      "baseline": "ARIMA",
+      "horizon": 1,
+      "dm_stat": 1.1109656871903177,
+      "p_value": 0.26658311912444344
+    },
+    "LSTM_h1": {
+      "baseline": "LSTM",
+      "horizon": 1,
+      "dm_stat": -2.522143840789795,
+      "p_value": 0.011664200127695645
+    },
+    "Transformer_h1": {
+      "baseline": "Transformer",
+      "horizon": 1,
+      "dm_stat": -11.218842506408691,
+      "p_value": 0.0
+    },
+    "SimpleMTGNN_h1": {
+      "baseline": "SimpleMTGNN",
+      "horizon": 1,
+      "dm_stat": -0.8597446084022522,
+      "p_value": 0.3899298391325967
+    },
+    "XGBoost_h1": {
+      "baseline": "XGBoost",
+      "horizon": 1,
+      "dm_stat": 2.458719491958618,
+      "p_value": 0.013943351458446385
+    },
+    "VMD-LSTM_h1": {
+      "baseline": "VMD-LSTM",
+      "horizon": 1,
+      "dm_stat": -16.777414321899414,
+      "p_value": 0.0
+    },
+    "ARIMA_h5": {
+      "baseline": "ARIMA",
+      "horizon": 5,
+      "dm_stat": -0.6437770168943183,
+      "p_value": 0.5197200393639134
+    },
+    "LSTM_h5": {
+      "baseline": "LSTM",
+      "horizon": 5,
+      "dm_stat": -1.012154306355196,
+      "p_value": 0.3114642800040335
+    },
+    "Transformer_h5": {
+      "baseline": "Transformer",
+      "horizon": 5,
+      "dm_stat": -3.318524957160508,
+      "p_value": 0.0009049423535798518
+    },
+    "SimpleMTGNN_h5": {
+      "baseline": "SimpleMTGNN",
+      "horizon": 5,
+      "dm_stat": -7.871698908989158,
+      "p_value": 3.552713678800501e-15
+    },
+    "XGBoost_h5": {
+      "baseline": "XGBoost",
+      "horizon": 5,
+      "dm_stat": -0.15048543235992184,
+      "p_value": 0.8803816431526683
+    },
+    "VMD-LSTM_h5": {
+      "baseline": "VMD-LSTM",
+      "horizon": 5,
+      "dm_stat": -3.4644416354764247,
+      "p_value": 0.0005313334230647726
+    },
+    "ARIMA_h10": {
+      "baseline": "ARIMA",
+      "horizon": 10,
+      "dm_stat": -0.17133272937751398,
+      "p_value": 0.8639621466178715
+    },
+    "LSTM_h10": {
+      "baseline": "LSTM",
+      "horizon": 10,
+      "dm_stat": -3.5945595956727106,
+      "p_value": 0.0003249407624130729
+    },
+    "Transformer_h10": {
+      "baseline": "Transformer",
+      "horizon": 10,
+      "dm_stat": -1.101101673544259,
+      "p_value": 0.2708524087565458
+    },
+    "SimpleMTGNN_h10": {
+      "baseline": "SimpleMTGNN",
+      "horizon": 10,
+      "dm_stat": -4.049597967188694,
+      "p_value": 5.130569677280761e-05
+    },
+    "XGBoost_h10": {
+      "baseline": "XGBoost",
+      "horizon": 10,
+      "dm_stat": 0.09191966940527431,
+      "p_value": 0.9267618636950206
+    },
+    "VMD-LSTM_h10": {
+      "baseline": "VMD-LSTM",
+      "horizon": 10,
+      "dm_stat": -2.6963083436679427,
+      "p_value": 0.007011273180931754
+    },
+    "ARIMA_h22": {
+      "baseline": "ARIMA",
+      "horizon": 22,
+      "dm_stat": 0.86661147929788,
+      "p_value": 0.38615492171031995
+    },
+    "LSTM_h22": {
+      "baseline": "LSTM",
+      "horizon": 22,
+      "dm_stat": -1.488703116122687,
+      "p_value": 0.13656556408968257
+    },
+    "Transformer_h22": {
+      "baseline": "Transformer",
+      "horizon": 22,
+      "dm_stat": -3.734050818295001,
+      "p_value": 0.00018842444896893795
+    },
+    "SimpleMTGNN_h22": {
+      "baseline": "SimpleMTGNN",
+      "horizon": 22,
+      "dm_stat": -2.3044763565609507,
+      "p_value": 0.021195918076875042
+    },
+    "XGBoost_h22": {
+      "baseline": "XGBoost",
+      "horizon": 22,
+      "dm_stat": 0.780985659707038,
+      "p_value": 0.43481092901060325
+    },
+    "VMD-LSTM_h22": {
+      "baseline": "VMD-LSTM",
+      "horizon": 22,
+      "dm_stat": -2.21669355286625,
+      "p_value": 0.02664403965521167
+    }
+  }
+}

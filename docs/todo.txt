@@ -1,0 +1,99 @@
+VMD-MFGNN v2 — Outstanding TODOs
+=================================
+
+0. [MAJOR UPDATE, 2026-08-09] The paper's central architecture claim is being
+   REFRAMED entirely. Peer review found TWO fatal issues: (1) none of the 7
+   models beat a naive zero-forecast/random-walk baseline on MAE at any horizon
+   (never reported in the paper), (2) the learned per-band graph adjacency has
+   COLLAPSED to uniform (every edge weight = 1/8 to 5 decimals) — diagnosed by a
+   dedicated Opus subagent as isotropic embedding norm collapse under Adam's
+   coupled weight decay (embeddings shrank 32x, never learned any directional
+   structure — cosine similarity 0.99+ between two independently trained models'
+   embeddings, i.e. they just shrank in place along shared random-init noise).
+   DECISION: paper is being reframed from "novel per-band-graph architecture
+   wins" to an HONEST EVALUATION STUDY (does VMD+graph architecture add any real
+   value over trivial baselines for copper forecasting — mostly no, rigorously
+   shown). See STATUS.md "Adjacency Collapse Diagnosed" section for the full
+   quantified diagnosis, including a publication-ready paragraph for the
+   Discussion/Limitations section. This SUPERSEDES item 1 below in importance —
+   the confound-check experiment result is now a secondary confirmatory check,
+   not the main open question (the diagnosis predicts it will show the same
+   collapse regardless of hidden_dim, since severity tracks epochs not width).
+
+1. [PENDING, now secondary] Update paper/main.tex's ablation numbers once the tuned confound-check
+   experiment finishes on Colab.
+
+   Context: paper/main.tex was fully written (2026-08-09) using the FIRST real
+   ablation run, where full_model (per-band graphs) was trained at the UNTUNED
+   default config (hidden_dim=64), while the main results table's VMD-MFGNN was
+   trained at the HPO-tuned config (hidden_dim=128). This is a real, disclosed
+   confound — not an error, but a fair comparison couldn't be made from it alone.
+
+   A second experiment is running (or about to run) that retrains full_model and
+   pooled_graph_matched_params BOTH at the tuned config (hidden_dim=128, num_heads=2,
+   dropout=0.0616, num_gnn_layers=1), for a genuine apples-to-apples comparison.
+   Results save to results/confound_check_tuned.json (does NOT overwrite the
+   existing, already-verified results/ablation_results.json).
+
+   ACTION NEEDED once that experiment completes:
+   - Compare full_model_tuned vs pooled_graph_matched_params_tuned's RMSE/MAE/DA
+     across all 4 horizons.
+   - If per-band STILL doesn't win: the paper's current honest "not supported by
+     the data" framing for RQ1/RQ2 is CONFIRMED — no rewrite needed, just add a
+     sentence noting the confound was checked and controlled for.
+   - If per-band DOES win once properly tuned: the paper's RQ1/RQ2 answers,
+     Discussion, Conclusion, and Abstract need to be rewritten back toward a
+     positive framing, and the untuned ablation becomes a documented reason why
+     (a limitation resolved by the tuned re-check, not a flaw in the argument).
+   - Either way: replace the ablation table's full_model/pooled_graph_matched_params
+     rows (or add new rows) with the tuned-comparison numbers, and update the
+     Limitations section's confound disclosure to reflect that this was checked.
+
+   See STATUS.md's "Paper Writer Pass Complete" section for full background on
+   the original finding and why this check matters.
+
+2. [FROM PLAGIARISM REVIEW, 2026-08-09] Fix 3 citation-attachment issues in
+   paper/main.tex's Introduction, flagged by the anti-plagiarism/originality
+   review (low overall risk, but these are real gaps):
+   - Line ~44: "22.8 million metric tonnes... China consuming over 50%" has no
+     citation of its own (only the following EV-copper sentence is cited via
+     \citep{IEA2024}) — attach a citation directly to this claim.
+   - Line ~44: the "Dr. Copper" macro-signaling claim cites Becerra2022, which is
+     a SARIMA/SARIMAX forecasting paper, not obviously a source for that specific
+     claim — verify Becerra2022 actually makes this claim in its own intro, or
+     find a more direct citation.
+   - Line ~48: Wu2020mtgnn (MTGNN, a general time-series paper, not stock-specific)
+     is grouped under "GNNs have shown strong results in stock prediction" — either
+     drop it from this sentence (it's separately, correctly cited elsewhere at
+     line ~82) or soften the claim to cover time-series generally.
+   - Lines ~46 and ~78: "290 citations" for VMD-LSTM/Liu2020 is stated twice with
+     no source or as-of date — add a footnote citation/date.
+
+3. [QUEUED] Launch remaining review subagents once paper is stable (actual
+   peer-reviewer FATAL/MAJOR/MINOR pass, AI-writing-detector pass) — in progress
+   as of this file's creation, see STATUS.md for live status.
+
+4. [FROM AI-WRITING-DETECTION REVIEW, 2026-08-09] Overall verdict: paper reads as
+   strongly human-authored (zero hits on the entire standard AI-filler checklist —
+   "Moreover," "It is important to note," "plays a crucial role," etc. all 0
+   occurrences; sentence/paragraph rhythm is irregular in a way that argues
+   AGAINST AI generation). Only real fixes:
+   - Compress Conclusion's RQ1/RQ2/RQ3 recap (lines ~389-395) — it re-derives the
+     same answers already given in full in Section 6/Discussion (lines ~358-367).
+     Collapse to 2-3 summary sentences pointing back to Section 6.
+   - Line ~44: "Accurate copper price forecasting is therefore essential for
+     mining companies, commodity traders, policymakers, and manufacturers" is
+     generic boilerplate (could paste into a wheat/oil/lithium paper unchanged) —
+     make it copper/EV-specific instead.
+   - The "this is a deliberate, disclosed choice, not an oversight" motif repeats
+     ~12-13 times across the paper (abstract/intro/methods/results/limitations/
+     conclusion) — keep it in Limitations where it belongs, thin out the repeats
+     elsewhere.
+   - Vary 2-3 of the 7 "We report..." sentence-openers for rhythm.
+
+5. [FLAGGED, LOW URGENCY] sync_to_drive()/restore_from_drive()'s file-size-based
+   staleness detection is unreliable for same-shaped .npy arrays (root cause of
+   the VMD-MFGNN prediction-file staleness incident, already resolved manually).
+   Not yet fixed at the source in notebooks/vmd_mfgnn_v2_colab.ipynb — worth a
+   proper fix (content hash or mtime-based check) before relying on Drive sync
+   for any future rerun, but not blocking anything right now.
