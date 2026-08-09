@@ -8,6 +8,8 @@ results/interpretability/
 results/figures/*.png
 results/checkpoints/
 results_graphfix/
+results_v2/
+*.zip
 *.egg-info/
 .ipynb_checkpoints/
 paper/*.aux
