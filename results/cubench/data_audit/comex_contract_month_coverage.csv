@@ -1,0 +1,193 @@
+ticker,http_status,first_obs_date,last_obs_date,obs_count,note
+HGF10.CMX,404,,,0,non-200 status
+HGF11.CMX,404,,,0,non-200 status
+HGF12.CMX,404,,,0,non-200 status
+HGF13.CMX,404,,,0,non-200 status
+HGF14.CMX,200,,,0,no_valid_close_obs
+HGF15.CMX,200,,,0,no_valid_close_obs
+HGF16.CMX,404,,,0,non-200 status
+HGF17.CMX,404,,,0,non-200 status
+HGF18.CMX,404,,,0,non-200 status
+HGF19.CMX,404,,,0,non-200 status
+HGF20.CMX,404,,,0,non-200 status
+HGF21.CMX,404,,,0,non-200 status
+HGF22.CMX,404,,,0,non-200 status
+HGF23.CMX,404,,,0,non-200 status
+HGF24.CMX,404,,,0,non-200 status
+HGF25.CMX,404,,,0,non-200 status
+HGG10.CMX,404,,,0,non-200 status
+HGG11.CMX,404,,,0,non-200 status
+HGG12.CMX,404,,,0,non-200 status
+HGG13.CMX,404,,,0,non-200 status
+HGG14.CMX,200,,,0,no_valid_close_obs
+HGG15.CMX,404,,,0,non-200 status
+HGG16.CMX,404,,,0,non-200 status
+HGG17.CMX,404,,,0,non-200 status
+HGG18.CMX,404,,,0,non-200 status
+HGG19.CMX,404,,,0,non-200 status
+HGG20.CMX,404,,,0,non-200 status
+HGG21.CMX,404,,,0,non-200 status
+HGG22.CMX,404,,,0,non-200 status
+HGG23.CMX,404,,,0,non-200 status
+HGG24.CMX,404,,,0,non-200 status
+HGG25.CMX,404,,,0,non-200 status
+HGH10.CMX,404,,,0,non-200 status
+HGH11.CMX,404,,,0,non-200 status
+HGH12.CMX,404,,,0,non-200 status
+HGH13.CMX,404,,,0,non-200 status
+HGH14.CMX,200,,,0,no_valid_close_obs
+HGH15.CMX,404,,,0,non-200 status
+HGH16.CMX,404,,,0,non-200 status
+HGH17.CMX,404,,,0,non-200 status
+HGH18.CMX,404,,,0,non-200 status
+HGH19.CMX,404,,,0,non-200 status
+HGH20.CMX,404,,,0,non-200 status
+HGH21.CMX,404,,,0,non-200 status
+HGH22.CMX,404,,,0,non-200 status
+HGH23.CMX,404,,,0,non-200 status
+HGH24.CMX,404,,,0,non-200 status
+HGH25.CMX,404,,,0,non-200 status
+HGJ10.CMX,404,,,0,non-200 status
+HGJ11.CMX,404,,,0,non-200 status
+HGJ12.CMX,404,,,0,non-200 status
+HGJ13.CMX,404,,,0,non-200 status
+HGJ14.CMX,200,,,0,no_valid_close_obs
+HGJ15.CMX,200,,,0,no_valid_close_obs
+HGJ16.CMX,404,,,0,non-200 status
+HGJ17.CMX,404,,,0,non-200 status
+HGJ18.CMX,404,,,0,non-200 status
+HGJ19.CMX,404,,,0,non-200 status
+HGJ20.CMX,404,,,0,non-200 status
+HGJ21.CMX,404,,,0,non-200 status
+HGJ22.CMX,404,,,0,non-200 status
+HGJ23.CMX,404,,,0,non-200 status
+HGJ24.CMX,404,,,0,non-200 status
+HGJ25.CMX,404,,,0,non-200 status
+HGK10.CMX,404,,,0,non-200 status
+HGK11.CMX,404,,,0,non-200 status
+HGK12.CMX,404,,,0,non-200 status
+HGK13.CMX,200,,,0,no_valid_close_obs
+HGK14.CMX,404,,,0,non-200 status
+HGK15.CMX,200,,,0,no_valid_close_obs
+HGK16.CMX,404,,,0,non-200 status
+HGK17.CMX,404,,,0,non-200 status
+HGK18.CMX,404,,,0,non-200 status
+HGK19.CMX,404,,,0,non-200 status
+HGK20.CMX,404,,,0,non-200 status
+HGK21.CMX,404,,,0,non-200 status
+HGK22.CMX,200,,,0,no_valid_close_obs
+HGK23.CMX,404,,,0,non-200 status
+HGK24.CMX,404,,,0,non-200 status
+HGK25.CMX,404,,,0,non-200 status
+HGM10.CMX,404,,,0,non-200 status
+HGM11.CMX,404,,,0,non-200 status
+HGM12.CMX,404,,,0,non-200 status
+HGM13.CMX,200,,,0,no_valid_close_obs
+HGM14.CMX,404,,,0,non-200 status
+HGM15.CMX,404,,,0,non-200 status
+HGM16.CMX,200,,,0,no_valid_close_obs
+HGM17.CMX,404,,,0,non-200 status
+HGM18.CMX,404,,,0,non-200 status
+HGM19.CMX,404,,,0,non-200 status
+HGM20.CMX,404,,,0,non-200 status
+HGM21.CMX,404,,,0,non-200 status
+HGM22.CMX,404,,,0,non-200 status
+HGM23.CMX,404,,,0,non-200 status
+HGM24.CMX,404,,,0,non-200 status
+HGM25.CMX,404,,,0,non-200 status
+HGN10.CMX,404,,,0,non-200 status
+HGN11.CMX,404,,,0,non-200 status
+HGN12.CMX,404,,,0,non-200 status
+HGN13.CMX,200,,,0,no_valid_close_obs
+HGN14.CMX,404,,,0,non-200 status
+HGN15.CMX,200,,,0,no_valid_close_obs
+HGN16.CMX,404,,,0,non-200 status
+HGN17.CMX,404,,,0,non-200 status
+HGN18.CMX,404,,,0,non-200 status
+HGN19.CMX,404,,,0,non-200 status
+HGN20.CMX,404,,,0,non-200 status
+HGN21.CMX,404,,,0,non-200 status
+HGN22.CMX,404,,,0,non-200 status
+HGN23.CMX,404,,,0,non-200 status
+HGN24.CMX,404,,,0,non-200 status
+HGN25.CMX,404,,,0,non-200 status
+HGQ10.CMX,404,,,0,non-200 status
+HGQ11.CMX,404,,,0,non-200 status
+HGQ12.CMX,404,,,0,non-200 status
+HGQ13.CMX,200,,,0,no_valid_close_obs
+HGQ14.CMX,404,,,0,non-200 status
+HGQ15.CMX,200,,,0,no_valid_close_obs
+HGQ16.CMX,404,,,0,non-200 status
+HGQ17.CMX,404,,,0,non-200 status
+HGQ18.CMX,404,,,0,non-200 status
+HGQ19.CMX,404,,,0,non-200 status
+HGQ20.CMX,404,,,0,non-200 status
+HGQ21.CMX,404,,,0,non-200 status
+HGQ22.CMX,404,,,0,non-200 status
+HGQ23.CMX,404,,,0,non-200 status
+HGQ24.CMX,404,,,0,non-200 status
+HGQ25.CMX,404,,,0,non-200 status
+HGU10.CMX,404,,,0,non-200 status
+HGU11.CMX,404,,,0,non-200 status
+HGU12.CMX,404,,,0,non-200 status
+HGU13.CMX,404,,,0,non-200 status
+HGU14.CMX,404,,,0,non-200 status
+HGU15.CMX,404,,,0,non-200 status
+HGU16.CMX,404,,,0,non-200 status
+HGU17.CMX,404,,,0,non-200 status
+HGU18.CMX,404,,,0,non-200 status
+HGU19.CMX,404,,,0,non-200 status
+HGU20.CMX,404,,,0,non-200 status
+HGU21.CMX,404,,,0,non-200 status
+HGU22.CMX,404,,,0,non-200 status
+HGU23.CMX,404,,,0,non-200 status
+HGU24.CMX,404,,,0,non-200 status
+HGU25.CMX,404,,,0,non-200 status
+HGV10.CMX,404,,,0,non-200 status
+HGV11.CMX,404,,,0,non-200 status
+HGV12.CMX,404,,,0,non-200 status
+HGV13.CMX,404,,,0,non-200 status
+HGV14.CMX,404,,,0,non-200 status
+HGV15.CMX,404,,,0,non-200 status
+HGV16.CMX,404,,,0,non-200 status
+HGV17.CMX,404,,,0,non-200 status
+HGV18.CMX,404,,,0,non-200 status
+HGV19.CMX,404,,,0,non-200 status
+HGV20.CMX,404,,,0,non-200 status
+HGV21.CMX,404,,,0,non-200 status
+HGV22.CMX,200,,,0,no_valid_close_obs
+HGV23.CMX,404,,,0,non-200 status
+HGV24.CMX,404,,,0,non-200 status
+HGV25.CMX,404,,,0,non-200 status
+HGX10.CMX,404,,,0,non-200 status
+HGX11.CMX,404,,,0,non-200 status
+HGX12.CMX,404,,,0,non-200 status
+HGX13.CMX,404,,,0,non-200 status
+HGX14.CMX,200,,,0,no_valid_close_obs
+HGX15.CMX,404,,,0,non-200 status
+HGX16.CMX,404,,,0,non-200 status
+HGX17.CMX,404,,,0,non-200 status
+HGX18.CMX,404,,,0,non-200 status
+HGX19.CMX,404,,,0,non-200 status
+HGX20.CMX,200,,,0,no_valid_close_obs
+HGX21.CMX,404,,,0,non-200 status
+HGX22.CMX,404,,,0,non-200 status
+HGX23.CMX,404,,,0,non-200 status
+HGX24.CMX,404,,,0,non-200 status
+HGX25.CMX,404,,,0,non-200 status
+HGZ10.CMX,404,,,0,non-200 status
+HGZ11.CMX,404,,,0,non-200 status
+HGZ12.CMX,404,,,0,non-200 status
+HGZ13.CMX,200,,,0,no_valid_close_obs
+HGZ14.CMX,200,,,0,no_valid_close_obs
+HGZ15.CMX,404,,,0,non-200 status
+HGZ16.CMX,404,,,0,non-200 status
+HGZ17.CMX,404,,,0,non-200 status
+HGZ18.CMX,404,,,0,non-200 status
+HGZ19.CMX,404,,,0,non-200 status
+HGZ20.CMX,404,,,0,non-200 status
+HGZ21.CMX,404,,,0,non-200 status
+HGZ22.CMX,404,,,0,non-200 status
+HGZ23.CMX,404,,,0,non-200 status
+HGZ24.CMX,404,,,0,non-200 status
+HGZ25.CMX,200,2020-09-29,2025-12-29,1321,ok

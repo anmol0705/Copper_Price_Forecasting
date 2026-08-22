@@ -1,0 +1,178 @@
+# CuBench configuration.
+# NEW file — separate from configs/default.yaml (Paper 1's frozen config; DO NOT EDIT).
+# Full spec: docs/cubench_implementation_plan.md.
+#
+# STATUS (Week A1, 2026-08-19): tickers/FRED series IDs are FILLED IN and verified
+# against real data pulls (see docs/cubench_data_availability.md). Model hyperparameters,
+# fold boundaries, and the cost grid are PLACEHOLDERS — they are transcribed from the
+# plan's pre-registered values but are not "frozen" until the pre-registration document
+# (docs/preregistration_paper2.md, a Week A2 gate) is committed. Do not train against
+# these hyperparameters before that gate passes.
+
+data:
+  start_date: "2010-01-01"
+  end_date: "2025-12-31"
+  target: "copper"
+
+  # --- Block P: copper price core (mandatory, full OHLC) ---
+  block_p:
+    copper: "HG=F"   # yfinance; verified 2010-01-04..2025-12-30, 4023 obs (Week A1 S1 spike)
+    # Volume is EXCLUDED from all features (Risk R9) -- 404/242 contracts/day are
+    # front-month rollover artifacts, not real COMEX volume.
+
+  # --- Block C-cross: cross-market daily (Close only) ---
+  block_c_cross:
+    aluminum: "ALI=F"    # verified: starts 2014-05-06, NOT 2010 (see availability doc -- a
+                          # real discrepancy from the plan's claimed 2010 start)
+    gold: "GC=F"          # verified 2010-01-04..2025-12-30, 4022 obs
+    silver: "SI=F"         # verified 2010-01-04..2025-12-30, 4022 obs
+    crude_oil: "CL=F"      # verified 2010-01-04..2025-12-30, 4023 obs
+    sp500: "^GSPC"          # verified 2010-01-04..2025-12-30, 4023 obs
+    us10y_yield: "^TNX"     # verified 2010-01-04..2025-12-30, 4021 obs; differenced in bp only
+
+  # --- Block C-macro: yfinance legs ---
+  block_c_macro_yfinance:
+    dxy: "DX-Y.NYB"    # verified 2010-01-04..2025-12-30, 4024 obs
+    vix: "^VIX"          # verified 2010-01-04..2025-12-30, 4023 obs
+    clp_usd_fx: "CLP=X"  # CONDITIONAL, PASSED S4 spike: 4164 obs, 0.22% gap (<2% threshold) -> include
+
+  # --- Block C-macro: FRED series (curl-based, see src/cubench/data.py) ---
+  block_c_macro_fred_daily:
+    real_yield_10y: "DFII10"        # verified first obs 2009-01-02 (plan expects <=2010-01-05)
+    baa_credit_spread: "BAA10Y"     # verified first obs 2009-01-02 (plan expects <=2010-01-05); replaces BAMLH0A0HYM2 per D4
+
+  block_c_macro_fred_monthly:
+    ppi_all_commodities: "PPIACO"           # verified first obs 2009-01-01; +30d publication lag
+    industrial_production: "INDPRO"          # verified first obs 2009-01-01; +22d publication lag
+
+  block_c_macro_fred_robustness_only:
+    high_yield_oas: "BAMLH0A0HYM2"   # EXCLUDED from headline (D4); 2023-08-21..2025-12-31 only (620 obs
+                                       # over this window); 2023-2025 robustness-appendix use only
+
+  block_c_macro_fred_ablation_only:
+    china_pmi_proxy: "BSCICP03CNM665S"   # ABLATION-ONLY (D7); +45d publication lag
+
+  # --- Block B: carry/curve -- TIER 3, confirmed by the Week A1 S2 audit ---
+  block_b:
+    status: "TIER_3_OMITTED_FROM_HEADLINE"
+    audit_csv: "results/cubench/data_audit/comex_contract_month_coverage.csv"
+    audit_summary_json: "results/cubench/data_audit/comex_contract_month_coverage_summary.json"
+    # 192 tickers HG{F,G,H,J,K,M,N,Q,U,V,X,Z}{10..25}.CMX probed; only 1 (HGZ25.CMX)
+    # returned usable data. Promotion rule (>=2 simultaneously-live contract months on
+    # >=60% of 2010-2025 trading days) fails trivially. See availability doc.
+
+  # --- Block B' curve proxy (ablation-only, never called carry) ---
+  block_b_prime:
+    b4_hg_qc_spread_ticker: "QC=F"   # E-mini copper; coverage check result documented in
+                                       # docs/cubench_data_availability.md (a judgment call --
+                                       # see that doc before relying on b4 in Week A2)
+
+# --- Publication lags (days), applied ONLY via src/cubench/pit.py::pit_join_monthly.
+# Deliberately conservative over-estimates -- see plan Section 2.3. Also defined in
+# src/cubench/data.py::PUBLICATION_LAG_DAYS (single source of truth is data.py; this
+# block is documentation/config mirroring it). ---
+publication_lag_days:
+  PPIACO: 30
+  INDPRO: 22
+  BSCICP03CNM665S: 45
+
+# =====================================================================================
+# EVERYTHING BELOW THIS LINE IS A PLACEHOLDER, transcribed from the plan's pre-registered
+# values. NOT frozen until docs/preregistration_paper2.md is committed (Week A2 gate).
+# Do not treat these as tunable, and do not train against them before that gate passes.
+# =====================================================================================
+
+folds:
+  scheme: "expanding_window_annual_refit"
+  initial_train_start: "2010-01-04"
+  initial_train_end: "2014-12-31"
+  oos_years: [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
+  embargo_trading_days:
+    h1: 6
+    h5: 10
+    h22: 27
+
+targets:
+  horizons: [1, 5, 22]
+  t1: "log_annualized_forward_realized_volatility"
+  t2_quantiles: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
+  t3: "direction_binary"
+
+# FROZEN (Week S3, post-HPO gate). Optuna study run 2026-08-22:
+# results/cubench/hpo_result.json -- 50 trials TPE, LightGBM, T1/h=1, trained on
+# 2010-01-04..2012-12-31, validated on 2013-01-01..2014-12-31 (754/504 obs), BEFORE any
+# OOS year was touched. Optuna's best trial reached RMSE=0.6625 vs 0.7519 for these fixed
+# defaults (~11.9% lower) on that single 504-obs validation split, via mainly
+# n_estimators=200 (vs 600), max_depth=8 (vs 5), reg_alpha=4.34 (vs 0.1).
+# DECISION: kept the plan's fixed defaults below UNCHANGED rather than adopting Optuna's
+# trial. Reasoning: (1) the pre-registration (docs/preregistration_paper2.md) already
+# committed to these exact defaults before this HPO study ran; (2) a ~12% RMSE delta
+# measured on only 504 validation observations is well within the noise band for this
+# low-SNR problem (N~4000 total) -- Optuna is likely partially fitting validation noise,
+# and the plan's stated rationale for the defaults ("deliberately shallow/regularized ...
+# given N~4000, pre-registered anti-overfitting choice") is a stronger prior than one
+# small-sample HPO run; (3) Optuna's own top choice (fewer, shallower... but actually
+# *deeper* trees, max_depth=8 > 5) does not point in a single clear direction, which is
+# itself evidence the search surface is noisy here. No per-fold or OOS-informed retuning
+# is performed regardless -- these are identical for every one of the 11 folds.
+lgbm_hyperparameters:
+  n_estimators: 600
+  learning_rate: 0.03
+  num_leaves: 15
+  max_depth: 5
+  min_child_samples: 60
+  subsample: 0.8
+  subsample_freq: 1
+  colsample_bytree: 0.7
+  reg_lambda: 1.0
+  reg_alpha: 0.1
+  n_jobs: -1
+  verbosity: -1
+  seeds: [42, 43, 44, 45, 46]
+
+xgboost_hyperparameters:
+  max_depth: 5
+  eta: 0.03
+  n_estimators: 600
+  subsample: 0.8
+  colsample_bytree: 0.7
+  min_child_weight: 20
+  lambda: 1.0
+  seeds: [42, 43, 44, 45, 46]
+
+catboost_hyperparameters:
+  depth: 5
+  learning_rate: 0.03
+  iterations: 600
+  l2_leaf_reg: 3
+  seeds: [42, 43, 44, 45, 46]
+
+randomforest_hyperparameters:
+  n_estimators: 500
+  max_depth: 12
+  min_samples_leaf: 20
+  max_features: "sqrt"
+  seeds: [42, 43, 44, 45, 46]
+
+deep_model_placeholder:
+  hidden_dim: 64
+  num_heads: 4
+  temporal_layers: 2
+  dropout: 0.1
+  lookback: 60
+  batch_size: 32
+  epochs: 100
+  patience: 20
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  seeds: [42, 43, 44]
+
+cost_grid_bps_placeholder: [0, 1, 2, 5, 10, 20, 50]
+headline_cost_bps_placeholder: 2
+
+calendar_regimes_placeholder:
+  R1: {start: "2015-01-01", end: "2016-12-31", label: "Post-supercycle bust"}
+  R2: {start: "2017-01-01", end: "2019-12-31", label: "Synchronized growth / trade war"}
+  R3: {start: "2020-01-01", end: "2020-12-31", label: "COVID shock & rebound"}
+  R4: {start: "2021-01-01", end: "2022-12-31", label: "Stimulus rally & 2022 shock"}
+  R5: {start: "2023-01-01", end: "2025-12-31", label: "Energy-transition / destocking"}
