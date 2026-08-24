@@ -10,8 +10,18 @@ first run of this script) completes further. Re-running simply picks up
 more (model, target, horizon, fold, seed) cells and produces more complete
 tables; it never assumes full coverage.
 
+RESUMABLE BY DEFAULT: every layer checks for its own output file on disk
+before recomputing and loads it back into memory instead of redoing the
+work, so a re-run after a disconnect or crash resumes from wherever it left
+off. The ablation layer (LightGBM retraining across A0-A7 rungs) uses the
+same incremental per-cell jsonl append+resume pattern as
+cubench_run_grid.py (results/cubench/ablations/ablation_results.jsonl) --
+an interrupted ablation pass loses at most the one cell that was mid-fit,
+not the whole pass. Pass --force to ignore all caches and recompute
+everything from scratch.
+
 Usage:
-    .venv_corr/Scripts/python scripts/cubench_evaluate.py [--skip-ablations] [--skip-backtest]
+    .venv_corr/Scripts/python scripts/cubench_evaluate.py [--skip-ablations] [--skip-backtest] [--force]
 
 Outputs:
     results/cubench/significance/dm_vs_har_rv.json
@@ -21,9 +31,10 @@ Outputs:
     results/cubench/base_rate_diagnostics.json
     results/cubench/backtest/cost_curve.json
     results/cubench/backtest/dsr_pbo.json
-    results/cubench/ablations/ablation_results.json
+    results/cubench/ablations/ablation_results.jsonl  (incremental, resumable)
+    results/cubench/ablations/ablation_results.json   (aggregated from the jsonl)
     results/cubench/regimes/regime_results.json
-    results/cubench/evaluation_run_log.json   (coverage snapshot + timing)
+    results/cubench/evaluation_run_log.json   (coverage snapshot + timing + per-layer cache status)
 """
 from __future__ import annotations
 
@@ -434,7 +445,72 @@ def run_dsr_pbo_layer(idx: dict, folds: list, df: pd.DataFrame) -> dict:
 # Ablations
 # ---------------------------------------------------------------------------
 
-def run_ablations(df: pd.DataFrame, folds: list, full_run: bool, time_budget_s: float = 900) -> dict:
+ABLATIONS_JSONL = OUT_ABLATIONS / "ablation_results.jsonl"
+
+
+def _index_ablation_jsonl(jsonl_path: Path) -> dict:
+    """Mirrors cubench_run_grid.py's incremental-jsonl resume/dedup pattern:
+    composite key (rung, target, horizon, fold, seed) -> last-seen row dict,
+    read back from the append-only log. An 'error' row still counts as done
+    (matches run_grid's semantics: a failed cell is not silently retried
+    forever on every resume)."""
+    done = {}
+    if jsonl_path.exists():
+        with open(jsonl_path) as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                    key = (r["rung"], r["target"], r["horizon"], r["fold"], r["seed"])
+                    done[key] = r
+                except Exception:
+                    continue
+    return done
+
+
+def _aggregate_ablation_losses(done: dict, target: str, horizon: int) -> dict:
+    """Concatenate per_obs_loss arrays (fold-then-seed order, matching the
+    original in-run chronological append order) for every rung that has at
+    least one successful cell for this (target, horizon), pooling cache +
+    freshly-computed cells alike."""
+    by_rung = defaultdict(list)
+    for key in sorted(done.keys()):
+        rung, t, h, fold, seed = key
+        if t != target or h != horizon:
+            continue
+        row = done[key]
+        if "error" in row or "per_obs_loss" not in row:
+            continue
+        by_rung[rung].append(np.asarray(row["per_obs_loss"], dtype=float))
+    return {rung: np.concatenate(arrs) for rung, arrs in by_rung.items() if arrs}
+
+
+def _pending_rung_comparisons(rung_losses: dict, comparisons: list) -> list:
+    """Every consecutive-rung (+ A6/A7-vs-A4_FULL) comparison whose two rungs
+    aren't both computed yet is reported as pending rather than silently
+    dropped or crashed on."""
+    done_pairs = {(c["rung_from"], c["rung_to"]) for c in comparisons}
+    all_pairs = [(abl.RUNG_ORDER_FOR_DM[i], abl.RUNG_ORDER_FOR_DM[i + 1])
+                 for i in range(len(abl.RUNG_ORDER_FOR_DM) - 1)]
+    all_pairs += [("A4_FULL", "A6"), ("A4_FULL", "A7")]
+    pending = []
+    for r0, r1 in all_pairs:
+        if (r0, r1) in done_pairs:
+            continue
+        missing = [r for r in (r0, r1) if r not in rung_losses]
+        pending.append({"rung_from": r0, "rung_to": r1, "status": "pending",
+                         "reason": f"rung(s) not yet computed: {missing}"})
+    return pending
+
+
+def run_ablations(df: pd.DataFrame, folds: list, full_run: bool, time_budget_s: float = 900,
+                   force: bool = False) -> dict:
+    """Same incremental-jsonl-with-resume discipline as cubench_run_grid.py's
+    run_grid(): each (rung, target, horizon, fold, seed) cell is appended to
+    ablation_results.jsonl and flushed immediately after it's fit+evaluated,
+    and any cell already present in that file on start is skipped (not
+    retrained). The backward-compatible ablation_results.json is rebuilt by
+    aggregating the jsonl on every call, so it always reflects the true
+    on-disk state even if this run is interrupted mid-way."""
     from src.cubench.models.trees import LGBM
     import yaml
     cfg_path = ROOT / "configs" / "cubench.yaml"
@@ -458,48 +534,91 @@ def run_ablations(df: pd.DataFrame, folds: list, full_run: bool, time_budget_s: 
         targets, horizons, seeds, fold_subset = ["t1"], [1], [42], folds[:3]
         mode = "smoke_test"
 
+    OUT_ABLATIONS.mkdir(parents=True, exist_ok=True)
+    jsonl_path = ABLATIONS_JSONL
+    if force and jsonl_path.exists():
+        jsonl_path.unlink()
+    done = _index_ablation_jsonl(jsonl_path)
+    n_precached = len(done)
+
     t_start = time.time()
-    out = {"mode": mode, "rung_definitions_sizes": {k: len(v) for k, v in rungs.items()},
-           "cells": [], "comparisons_by_target_horizon": {}, "timed_out": False}
+    timed_out = False
+    n_new, n_skipped, n_errors = 0, 0, 0
 
-    for target in targets:
-        for horizon in horizons:
-            rung_losses = {}
-            for rung_id, cols in rungs.items():
-                if time.time() - t_start > time_budget_s:
-                    out["timed_out"] = True
+    with open(jsonl_path, "a") as out_f:
+        for target in targets:
+            for horizon in horizons:
+                for rung_id, cols in rungs.items():
+                    if time.time() - t_start > time_budget_s:
+                        timed_out = True
+                        break
+                    for fold in fold_subset:
+                        if timed_out:
+                            break
+                        for seed in seeds:
+                            key = (rung_id, target, horizon, fold["fold"], seed)
+                            if key in done:
+                                n_skipped += 1
+                                continue
+                            if time.time() - t_start > time_budget_s:
+                                timed_out = True
+                                break
+                            try:
+                                res = abl.run_ablation_cell(
+                                    lambda s, h, _t=target: factory(s, h, _t),
+                                    cols, target, horizon, fold, seed, df)
+                                row = {
+                                    "rung": rung_id, "target": target, "horizon": horizon,
+                                    "fold": fold["fold"], "seed": seed, **res["metrics"],
+                                    "per_obs_loss": res["per_obs_loss"].tolist(),
+                                }
+                            except Exception as e:
+                                row = {
+                                    "rung": rung_id, "target": target, "horizon": horizon,
+                                    "fold": fold["fold"], "seed": seed, "error": str(e),
+                                }
+                                n_errors += 1
+                            out_f.write(json.dumps(row, default=float) + "\n")
+                            out_f.flush()
+                            done[key] = row
+                            n_new += 1
+                    if timed_out:
+                        break
+                if timed_out:
                     break
-                losses = []
-                for fold in fold_subset:
-                    for seed in seeds:
-                        try:
-                            res = abl.run_ablation_cell(
-                                lambda s, h, _t=target: factory(s, h, _t),
-                                cols, target, horizon, fold, seed, df)
-                        except Exception as e:
-                            out["cells"].append({
-                                "rung": rung_id, "target": target, "horizon": horizon,
-                                "fold": fold["fold"], "seed": seed, "error": str(e),
-                            })
-                            continue
-                        out["cells"].append({
-                            "rung": rung_id, "target": target, "horizon": horizon,
-                            "fold": fold["fold"], "seed": seed, **res["metrics"],
-                        })
-                        losses.append(res["per_obs_loss"])
-                if losses:
-                    rung_losses[rung_id] = np.concatenate(losses)
-                if time.time() - t_start > time_budget_s:
-                    out["timed_out"] = True
-                    break
-            comparisons = abl.compare_consecutive_rungs(rung_losses, horizon=horizon)
-            out["comparisons_by_target_horizon"][f"{target}_h{horizon}"] = comparisons
-            if out["timed_out"]:
+            if timed_out:
                 break
-        if out["timed_out"]:
-            break
 
-    out["wall_s"] = time.time() - t_start
+    # Rebuild the aggregated view from whatever is on disk now (pre-existing
+    # cache + anything newly computed this run), not just this run's targets/
+    # horizons -- so a narrower resume (e.g. smoke test after a prior full
+    # run) never regresses previously-computed comparisons.
+    all_th_pairs = {(t, h) for (_, t, h, _, _) in done.keys()}
+    all_th_pairs |= {(t, h) for t in targets for h in horizons}
+
+    comparisons_by_th = {}
+    for target, horizon in sorted(all_th_pairs):
+        rung_losses = _aggregate_ablation_losses(done, target, horizon)
+        comparisons = abl.compare_consecutive_rungs(rung_losses, horizon=horizon)
+        pending = _pending_rung_comparisons(rung_losses, comparisons)
+        comparisons_by_th[f"{target}_h{horizon}"] = comparisons + pending
+
+    cells = [{k: v for k, v in row.items() if k != "per_obs_loss"} for row in done.values()]
+    cells.sort(key=lambda c: (c["rung"], c["target"], c["horizon"], c["fold"], c["seed"]))
+
+    out = {
+        "mode": mode,
+        "rung_definitions_sizes": {k: len(v) for k, v in rungs.items()},
+        "cells": cells,
+        "comparisons_by_target_horizon": comparisons_by_th,
+        "timed_out": timed_out,
+        "wall_s": time.time() - t_start,
+        "n_cells_total": len(done),
+        "n_cells_precached": n_precached,
+        "n_cells_new_this_run": n_new,
+        "n_cells_skipped_already_done": n_skipped,
+        "n_cells_errored_this_run": n_errors,
+    }
     return out
 
 
@@ -600,6 +719,11 @@ def main():
                          help="Run the full A0-A7 x 3 targets x 3 horizons x 5 seeds grid "
                               "instead of the smoke test.")
     parser.add_argument("--ablation-time-budget", type=float, default=900.0)
+    parser.add_argument("--force", action="store_true",
+                         help="Ignore every cached layer output (including the ablation "
+                              "jsonl) and recompute everything from scratch. Default "
+                              "behavior with no flags is to resume: load whatever layer "
+                              "outputs already exist on disk instead of recomputing them.")
     args = parser.parse_args()
 
     t_start = time.time()
@@ -616,19 +740,58 @@ def main():
     for d in [OUT_SIG, OUT_BACKTEST, OUT_ABLATIONS, OUT_REGIMES]:
         d.mkdir(parents=True, exist_ok=True)
 
-    print("Running DM-HLN layer vs har_rv...")
-    dm_vs_har = run_dm_layer(idx, folds, df, reference_model="har_rv")
-    save_results({"comparisons": dm_vs_har}, str(OUT_SIG / "dm_vs_har_rv.json"))
+    layer_status = {}
 
-    print("Running DM-HLN layer vs null_persist...")
-    dm_vs_null = run_dm_layer(idx, folds, df, reference_model="null_persist")
-    save_results({"comparisons": dm_vs_null}, str(OUT_SIG / "dm_vs_null_persist.json"))
+    def cached(path: Path) -> bool:
+        return path.exists() and not args.force
 
-    print("Running PT + McNemar + base-rate diagnostics on T3...")
-    per_fold_diag, pooled_diag = run_pt_mcnemar_layer(idx, folds, df)
-    dispersion_t1_t2 = apply_dispersion_check_t1_t2(idx, folds, df)
+    # --- DM vs har_rv ---
+    p = OUT_SIG / "dm_vs_har_rv.json"
+    if cached(p):
+        print(f"[cache] DM-HLN vs har_rv <- {p}")
+        dm_vs_har = json.loads(p.read_text())["comparisons"]
+        layer_status["dm_vs_har_rv"] = "cached"
+    else:
+        print("Running DM-HLN layer vs har_rv...")
+        dm_vs_har = run_dm_layer(idx, folds, df, reference_model="har_rv")
+        save_results({"comparisons": dm_vs_har}, str(p))
+        layer_status["dm_vs_har_rv"] = "computed"
+
+    # --- DM vs null_persist ---
+    p = OUT_SIG / "dm_vs_null_persist.json"
+    if cached(p):
+        print(f"[cache] DM-HLN vs null_persist <- {p}")
+        dm_vs_null = json.loads(p.read_text())["comparisons"]
+        layer_status["dm_vs_null_persist"] = "cached"
+    else:
+        print("Running DM-HLN layer vs null_persist...")
+        dm_vs_null = run_dm_layer(idx, folds, df, reference_model="null_persist")
+        save_results({"comparisons": dm_vs_null}, str(p))
+        layer_status["dm_vs_null_persist"] = "computed"
+
+    # --- PT + McNemar + base-rate + T1/T2 dispersion diagnostics ---
+    # base_rate_diagnostics.json is the canonical cache for this layer -- it's
+    # the only one of the two files this layer writes that carries all three
+    # in-memory structures (per_fold_diag, pooled_diag, dispersion_t1_t2)
+    # downstream layers (Holm, run_log) need reconstructed, not just a print
+    # statement skipped.
+    if cached(BASE_RATE_OUT):
+        print(f"[cache] PT/McNemar/base-rate/dispersion <- {BASE_RATE_OUT}")
+        brd = json.loads(BASE_RATE_OUT.read_text())
+        per_fold_diag = brd["per_fold_cells"]
+        pooled_diag = brd["pooled_by_model_horizon"]
+        dispersion_t1_t2 = brd["t1_t2_dispersion_checks"]
+        layer_status["pt_mcnemar_base_rate"] = "cached"
+    else:
+        print("Running PT + McNemar + base-rate diagnostics on T3...")
+        per_fold_diag, pooled_diag = run_pt_mcnemar_layer(idx, folds, df)
+        dispersion_t1_t2 = apply_dispersion_check_t1_t2(idx, folds, df)
+        layer_status["pt_mcnemar_base_rate"] = "computed"
     flagged = [r for r in per_fold_diag if r["verdict"] != "ok"]
     flagged_pooled = [r for r in pooled_diag if r["verdict"] != "ok"]
+    # Re-save unconditionally: this is a cheap serialization of in-memory data
+    # (cached or freshly computed), not a recomputation, so it stays correct
+    # and in sync even when the layer above was loaded from cache.
     save_results({
         "per_fold_cells": per_fold_diag,
         "pooled_by_model_horizon": pooled_diag,
@@ -638,43 +801,100 @@ def main():
         "n_pooled_cells": len(pooled_diag),
         "n_flagged_pooled": len(flagged_pooled),
     }, str(BASE_RATE_OUT))
-
-    print("Running Holm-Bonferroni layer...")
-    holm = run_holm_layer(dm_vs_har, pooled_diag)
-    save_results(holm, str(OUT_SIG / "holm_bonferroni.json"))
     save_results({"per_fold": per_fold_diag, "pooled": pooled_diag},
                  str(OUT_SIG / "pt_mcnemar_t3.json"))
 
+    # --- Holm-Bonferroni (depends on dm_vs_har + pooled_diag, both available
+    # above whether they were loaded from cache or computed fresh) ---
+    p = OUT_SIG / "holm_bonferroni.json"
+    if cached(p):
+        print(f"[cache] Holm-Bonferroni <- {p}")
+        holm = json.loads(p.read_text())
+        layer_status["holm_bonferroni"] = "cached"
+    else:
+        print("Running Holm-Bonferroni layer...")
+        holm = run_holm_layer(dm_vs_har, pooled_diag)
+        save_results(holm, str(p))
+        layer_status["holm_bonferroni"] = "computed"
+
+    # --- Backtest ---
     backtest_out, dsr_pbo_out = {}, {}
     if not args.skip_backtest:
-        print("Running backtest layer (cost curve)...")
-        backtest_out = run_backtest_layer(idx, folds, df)
-        save_results(backtest_out, str(OUT_BACKTEST / "cost_curve.json"))
+        p = OUT_BACKTEST / "cost_curve.json"
+        if cached(p):
+            print(f"[cache] Backtest cost curve <- {p}")
+            backtest_out = json.loads(p.read_text())
+            layer_status["backtest_cost_curve"] = "cached"
+        else:
+            print("Running backtest layer (cost curve)...")
+            backtest_out = run_backtest_layer(idx, folds, df)
+            save_results(backtest_out, str(p))
+            layer_status["backtest_cost_curve"] = "computed"
 
-        print("Running DSR/PBO layer...")
-        dsr_pbo_out = run_dsr_pbo_layer(idx, folds, df)
-        save_results(dsr_pbo_out, str(OUT_BACKTEST / "dsr_pbo.json"))
+        p2 = OUT_BACKTEST / "dsr_pbo.json"
+        if cached(p2):
+            print(f"[cache] DSR/PBO <- {p2}")
+            dsr_pbo_out = json.loads(p2.read_text())
+            layer_status["dsr_pbo"] = "cached"
+        else:
+            print("Running DSR/PBO layer...")
+            dsr_pbo_out = run_dsr_pbo_layer(idx, folds, df)
+            save_results(dsr_pbo_out, str(p2))
+            layer_status["dsr_pbo"] = "computed"
+    else:
+        layer_status["backtest_cost_curve"] = "skipped"
+        layer_status["dsr_pbo"] = "skipped"
 
+    # --- Ablations: always incremental (per-cell jsonl resume), regardless of
+    # --force -- --force there means "clear the jsonl and retrain every cell",
+    # handled inside run_ablations itself. ---
     ablation_out = {}
     if not args.skip_ablations:
-        print(f"Running ablations ({'FULL' if args.ablation_full else 'SMOKE TEST'})...")
+        print(f"Running ablations ({'FULL' if args.ablation_full else 'SMOKE TEST'}, "
+              f"resume-enabled{' [FORCE: clearing ablation cache]' if args.force else ''})...")
         ablation_out = run_ablations(df, folds, full_run=args.ablation_full,
-                                       time_budget_s=args.ablation_time_budget)
+                                       time_budget_s=args.ablation_time_budget,
+                                       force=args.force)
         save_results(ablation_out, str(OUT_ABLATIONS / "ablation_results.json"))
+        layer_status["ablations"] = (
+            f"computed ({ablation_out.get('n_cells_new_this_run', 0)} new cells, "
+            f"{ablation_out.get('n_cells_skipped_already_done', 0)} skipped as already-done, "
+            f"{ablation_out.get('n_cells_total', 0)} total cells on disk)"
+        )
+    else:
+        layer_status["ablations"] = "skipped"
 
-    print("Running T1 R2_OOS/Mincer-Zarnowitz and T2 Kupiec coverage...")
-    t1_ext = run_t1_extended_metrics(idx, folds, df)
-    t2_kupiec = run_t2_kupiec(idx, folds, df)
-    save_results({"t1_extended": t1_ext, "t2_kupiec": t2_kupiec},
-                 str(OUT_SIG / "t1_t2_extended_metrics.json"))
+    # --- T1/T2 extended metrics ---
+    p = OUT_SIG / "t1_t2_extended_metrics.json"
+    if cached(p):
+        print(f"[cache] T1/T2 extended metrics <- {p}")
+        ext = json.loads(p.read_text())
+        t1_ext, t2_kupiec = ext["t1_extended"], ext["t2_kupiec"]
+        layer_status["t1_t2_extended_metrics"] = "cached"
+    else:
+        print("Running T1 R2_OOS/Mincer-Zarnowitz and T2 Kupiec coverage...")
+        t1_ext = run_t1_extended_metrics(idx, folds, df)
+        t2_kupiec = run_t2_kupiec(idx, folds, df)
+        save_results({"t1_extended": t1_ext, "t2_kupiec": t2_kupiec}, str(p))
+        layer_status["t1_t2_extended_metrics"] = "computed"
 
-    print("Running regime segmentation...")
-    regime_out = run_regimes(idx, folds, df)
-    save_results(regime_out, str(OUT_REGIMES / "regime_results.json"))
+    # --- Regimes ---
+    p = OUT_REGIMES / "regime_results.json"
+    if cached(p):
+        print(f"[cache] Regime segmentation <- {p}")
+        regime_out = json.loads(p.read_text())
+        layer_status["regimes"] = "cached"
+    else:
+        print("Running regime segmentation...")
+        regime_out = run_regimes(idx, folds, df)
+        save_results(regime_out, str(p))
+        layer_status["regimes"] = "computed"
 
     run_log = {
         "run_timestamp": pd.Timestamp.now().isoformat(),
         "wall_s_total": time.time() - t_start,
+        "force_recompute": args.force,
+        "layer_status": layer_status,
         "n_prediction_files": n_files,
         "n_unparsed_files": n_unparsed,
         "coverage_by_model": coverage,
@@ -691,9 +911,11 @@ def main():
         ],
         "ablation_mode": ablation_out.get("mode"),
         "ablation_timed_out": ablation_out.get("timed_out"),
+        "ablation_cells_total": ablation_out.get("n_cells_total"),
     }
     save_results(run_log, str(RUN_LOG))
-    print(f"Done in {run_log['wall_s_total']:.1f}s. See results/cubench/evaluation_run_log.json")
+    print(f"Done in {run_log['wall_s_total']:.1f}s. Layer status: {layer_status}")
+    print("See results/cubench/evaluation_run_log.json")
 
 
 if __name__ == "__main__":

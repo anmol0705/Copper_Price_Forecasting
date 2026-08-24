@@ -39,8 +39,8 @@ from cell 1 except to re-mount Drive and re-clone.
 | 3. Feature engineering | `cubench_build_features.py` + known-good shape assertion (4023×81) | 1–3 min | Yes |
 | 4. Leakage tests | `pytest tests/test_leakage.py`, hard gate | ~6–10 min (382s observed locally) | Yes, but see below |
 | 5. Full grid training | nulls → econometric → linear → trees → deep, incremental save + Drive sync | **6–14 hours total** (see breakdown below) | **Yes — this is the point of the whole design** |
-| 6. Statistical evaluation | `cubench_evaluate.py` (DM/PT/Holm/backtest/base-rate) | 10 min – a few hours depending on grid coverage and whether `--ablation-full` completes within budget | Partially — see note in Section 7 below |
-| 7. Full ablations (A0–A7) | `cubench_evaluate.py --ablation-full`, no time cap beyond what you set | **Up to several hours**, no incremental resume | **No — see warning below** |
+| 6. Statistical evaluation | `cubench_evaluate.py` (DM/PT/Holm/backtest/base-rate) | 10 min – a few hours depending on grid coverage and whether `--ablation-full` completes within budget | **Yes — every layer, including ablations, resumes from disk by default** |
+| 7. Full ablations (A0–A7) | `cubench_evaluate.py --ablation-full`, no time cap beyond what you set | **Up to several hours** | **Yes — incremental per-cell jsonl resume, same design as Section 5** |
 | 8. Figures | `cubench_make_figures.py` | 1–5 min | Yes |
 | 9. Package/download | zip `results/cubench/`, download + Drive copy | <1 min | Yes |
 
@@ -89,18 +89,22 @@ exists (see Section 4 below).
   re-run the "restore from Drive" cell, and re-run whichever family cell you were on —
   it will skip everything already done and continue from there. See Section 4 below
   for exactly how this was verified to work.
-- **Section 6/7 (evaluation/ablations)**: `cubench_evaluate.py` is safe to re-run
-  wholesale — it recomputes everything from whatever currently exists in
-  `grid_results.jsonl`/`predictions/*.npy`, it doesn't assume full coverage. The
-  **ablation layer specifically has no incremental resume** (see the warning inline in
-  Section 7 of the notebook) — a disconnect during the full-ablation cell loses that
-  entire in-progress pass, since `run_ablations` only writes
-  `ablations/ablation_results.json` once at the end or on hitting its time budget. If
-  you're on a Colab tier prone to disconnecting, either run this section in as
-  uninterrupted a stretch as you can arrange, or lower `--ablation-time-budget` to a
-  value you're confident will complete in one sitting and re-run with a larger budget
-  later if needed (later runs simply overwrite the smaller-budget result with a fuller
-  one — nothing is lost by doing a smaller pass first).
+- **Section 6/7 (evaluation/ablations)**: `cubench_evaluate.py` is now resumable by
+  default at the level of every individual layer, not just "safe to re-run wholesale."
+  Each statistical/backtest/regime layer checks whether its own output file already
+  exists on disk and, if so, loads it back into memory instead of recomputing — a
+  disconnect between layers loses at most whatever layer was mid-computation when the
+  session died. The **ablation layer** (`run_ablations` in `cubench_evaluate.py`) uses
+  the same incremental-jsonl-with-resume pattern as Section 5's main grid: every
+  `(rung, target, horizon, fold, seed)` cell is appended to
+  `results/cubench/ablations/ablation_results.jsonl` and flushed immediately after it's
+  fit, and any cell already present in that file on restart is skipped rather than
+  retrained. The backward-compatible `ablation_results.json` is rebuilt by aggregating
+  the jsonl on every run, so it always reflects the true on-disk state even mid-run.
+  Just reconnect and re-run the same evaluation cell — it resumes automatically; no
+  special handling needed. Pass `--force` only if you deliberately want to discard all
+  cached layer outputs (including the ablation jsonl) and recompute everything from
+  scratch.
 - **Section 8 (figures)**: `cubench_make_figures.py` reads only existing Phase 4
   outputs + `features.parquet`, so it's safe to re-run any time, including on partial
   grid coverage (it labels sparse figures explicitly rather than pretending they're
@@ -193,9 +197,13 @@ reviewed decision:
   processes appending concurrently at some point in local history. Not a bug in the
   resume logic itself (verified above), just a reason the notebook insists on running
   tree families sequentially rather than in parallel Colab cells.
-- **`cubench_evaluate.py`'s ablation layer has no incremental resume** (see Section 3
-  above) — this is a real gap relative to the main grid's per-cell resume discipline,
-  worth knowing about before committing a long, uninterrupted-required session to it.
+- **`cubench_evaluate.py`'s ablation layer previously had no incremental resume**
+  (flagged during Phase 6 packaging) — this has since been fixed: it now uses the same
+  per-cell jsonl resume discipline as the main grid (see Section 3 above and
+  `results/cubench/ablations/ablation_results.jsonl`). Verified with a real
+  force-killed-mid-run test: partial cells survived, the resumed run skipped them with
+  zero duplicate keys, and the aggregated `ablation_results.json` reflected the
+  combined state correctly.
 
 None of the above required modifying `src/cubench/*.py`, `configs/*.yaml`, or
 `requirements*.txt` — the notebook works around none of them silently; it documents
