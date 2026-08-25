@@ -167,21 +167,53 @@ def run_one(
     return metrics
 
 
+def prediction_file_path(model_id: str, target: str, horizon: int, fold_k: int, seed: int) -> Path:
+    """The .npy path run_one() writes for one (model,target,horizon,fold,seed) cell."""
+    return PRED_DIR / f"{model_id}_{target}_h{horizon}_fold{fold_k}_seed{seed}.npy"
+
+
+def prediction_file_ok(model_id: str, target: str, horizon: int, fold_k: int, seed: int) -> bool:
+    """True iff the raw prediction array for this cell genuinely exists on disk and is
+    loadable (non-empty, not truncated/corrupt). This is the check that was missing:
+    a line in grid_results.jsonl only proves a summary metric was once computed and
+    logged -- it says nothing about whether the underlying .npy survived (e.g. Colab's
+    Drive sync only ever backed up the jsonl, never predictions/, so a runtime restart
+    between "training finished" and "zip+download" left jsonl lines with no matching
+    array on disk). A cell is only really "done" if both exist."""
+    fname = prediction_file_path(model_id, target, horizon, fold_k, seed)
+    if not fname.exists() or fname.stat().st_size == 0:
+        return False
+    try:
+        arr = np.load(fname)
+        return arr.size > 0
+    except Exception:
+        return False
+
+
 def run_grid(models: dict, targets: list, horizons: list, folds: list, df: pd.DataFrame,
              results_path: Path, append: bool = True) -> list:
     """Run models x targets x horizons x folds x seeds, writing incrementally (one JSON
     line per cell appended to results_path.with_suffix('.jsonl')) so progress survives
-    interruption. models: {model_id: (factory, seeds)}."""
+    interruption. models: {model_id: (factory, seeds)}.
+
+    A cell is skipped as "already done" only if BOTH its jsonl summary line exists AND
+    its raw predictions/*.npy file genuinely exists on disk and is loadable -- see
+    prediction_file_ok(). A jsonl line with no matching .npy (missing predictions, e.g.
+    from an interrupted Colab session whose Drive sync only covered the jsonl) is
+    treated as NOT done and the cell is retrained, so this fix is what actually makes
+    "done" mean the raw .npy this project's verification practice depends on is real
+    on disk -- not just that a summary line exists somewhere."""
     jsonl_path = results_path.with_suffix(".jsonl")
-    done = set()
+    logged = set()
     if append and jsonl_path.exists():
         with open(jsonl_path) as f:
             for line in f:
                 try:
                     r = json.loads(line)
-                    done.add((r["model"], r["target"], r["horizon"], r["fold"], r["seed"]))
+                    logged.add((r["model"], r["target"], r["horizon"], r["fold"], r["seed"]))
                 except Exception:
                     pass
+    done = {key for key in logged if prediction_file_ok(*key)}
     all_results = []
     with open(jsonl_path, "a") as out:
         for model_id, (factory, seeds) in models.items():
