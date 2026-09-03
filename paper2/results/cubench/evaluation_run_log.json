@@ -1,0 +1,1140 @@
+{
+  "run_timestamp": "2026-08-22T02:14:32.905670",
+  "wall_s_total": 803.5028953552246,
+  "n_prediction_files": 1432,
+  "n_unparsed_files": 0,
+  "coverage_by_model": {
+    "arima": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "11/11 folds",
+      "t1_h5": "11/11 folds",
+      "t2_h1": "11/11 folds",
+      "t2_h22": "11/11 folds",
+      "t2_h5": "11/11 folds",
+      "t3_h1": "11/11 folds",
+      "t3_h22": "11/11 folds",
+      "t3_h5": "11/11 folds"
+    },
+    "catboost": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "2/11 folds",
+      "t1_h5": "11/11 folds"
+    },
+    "elasticnet": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "11/11 folds",
+      "t1_h5": "11/11 folds",
+      "t2_h1": "11/11 folds",
+      "t2_h22": "11/11 folds",
+      "t2_h5": "11/11 folds",
+      "t3_h1": "11/11 folds",
+      "t3_h22": "11/11 folds",
+      "t3_h5": "11/11 folds"
+    },
+    "garch11": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "11/11 folds",
+      "t1_h5": "11/11 folds",
+      "t2_h1": "11/11 folds",
+      "t2_h22": "11/11 folds",
+      "t2_h5": "11/11 folds"
+    },
+    "gjr_garch": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "11/11 folds",
+      "t1_h5": "11/11 folds",
+      "t2_h1": "11/11 folds",
+      "t2_h22": "11/11 folds",
+      "t2_h5": "11/11 folds"
+    },
+    "har_rv_q": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "11/11 folds",
+      "t1_h5": "11/11 folds",
+      "t2_h1": "11/11 folds",
+      "t2_h22": "11/11 folds",
+      "t2_h5": "11/11 folds"
+    },
+    "har_rv": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "11/11 folds",
+      "t1_h5": "11/11 folds",
+      "t2_h1": "11/11 folds",
+      "t2_h22": "11/11 folds",
+      "t2_h5": "11/11 folds"
+    },
+    "lgbm": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "11/11 folds",
+      "t1_h5": "11/11 folds",
+      "t2_h1": "11/11 folds",
+      "t2_h22": "9/11 folds",
+      "t2_h5": "11/11 folds"
+    },
+    "lstm": {
+      "t1_h1": "1/11 folds"
+    },
+    "null_always_down": {
+      "t3_h1": "11/11 folds",
+      "t3_h22": "11/11 folds",
+      "t3_h5": "11/11 folds"
+    },
+    "null_majority": {
+      "t3_h1": "11/11 folds",
+      "t3_h22": "11/11 folds",
+      "t3_h5": "11/11 folds"
+    },
+    "null_persist": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "11/11 folds",
+      "t1_h5": "11/11 folds",
+      "t2_h1": "11/11 folds",
+      "t2_h22": "11/11 folds",
+      "t2_h5": "11/11 folds",
+      "t3_h1": "11/11 folds",
+      "t3_h22": "11/11 folds",
+      "t3_h5": "11/11 folds"
+    },
+    "null_rollmean": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "11/11 folds",
+      "t1_h5": "11/11 folds"
+    },
+    "null_zero": {
+      "t2_h1": "11/11 folds",
+      "t2_h22": "11/11 folds",
+      "t2_h5": "11/11 folds",
+      "t3_h1": "11/11 folds",
+      "t3_h22": "11/11 folds",
+      "t3_h5": "11/11 folds"
+    },
+    "randomforest": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "9/11 folds",
+      "t1_h5": "11/11 folds"
+    },
+    "xgboost": {
+      "t1_h1": "11/11 folds",
+      "t1_h22": "2/11 folds",
+      "t1_h5": "11/11 folds"
+    }
+  },
+  "n_dm_comparisons_vs_har_rv": 34,
+  "n_dm_comparisons_vs_null_persist": 34,
+  "n_t3_cells_pooled": 18,
+  "n_t3_cells_flagged_pooled": 6,
+  "n_t3_cells_per_fold": 198,
+  "n_t3_cells_flagged_per_fold": 144,
+  "flagged_per_fold_detail": [
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 1,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 22,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "arima",
+      "horizon": 5,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 1,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 1,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 1,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 1,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 1,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 1,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 1,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 22,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 22,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 22,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 5,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "elasticnet",
+      "horizon": 5,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "suspect_low_dispersion"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 1,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 22,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_always_down",
+      "horizon": 5,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 1,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 22,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_majority",
+      "horizon": 5,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 1,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 22,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 0,
+      "oos_year": 2015,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 1,
+      "oos_year": 2016,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 2,
+      "oos_year": 2017,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 3,
+      "oos_year": 2018,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 4,
+      "oos_year": 2019,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 5,
+      "oos_year": 2020,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 6,
+      "oos_year": 2021,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 7,
+      "oos_year": 2022,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 8,
+      "oos_year": 2023,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 9,
+      "oos_year": 2024,
+      "verdict": "constant_forecast_artifact"
+    },
+    {
+      "model": "null_zero",
+      "horizon": 5,
+      "fold": 10,
+      "oos_year": 2025,
+      "verdict": "constant_forecast_artifact"
+    }
+  ],
+  "ablation_mode": "smoke_test",
+  "ablation_timed_out": true
+}

@@ -1,0 +1,39 @@
+{
+  "n_trials": 50,
+  "wall_s": 15.393714189529419,
+  "best_params": {
+    "n_estimators": 200,
+    "learning_rate": 0.017409895607729726,
+    "num_leaves": 15,
+    "max_depth": 8,
+    "min_child_samples": 91,
+    "subsample": 0.8095643663710446,
+    "colsample_bytree": 0.4552688165926206,
+    "reg_lambda": 0.14783488062885297,
+    "reg_alpha": 4.3413299403706755
+  },
+  "best_rmse": 0.662493310809477,
+  "default_params": {
+    "n_estimators": 600,
+    "learning_rate": 0.03,
+    "num_leaves": 15,
+    "max_depth": 5,
+    "min_child_samples": 60,
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.7,
+    "reg_lambda": 1.0,
+    "reg_alpha": 0.1
+  },
+  "default_rmse": 0.7518639518334432,
+  "improvement_pct": 11.886544208700675,
+  "train_window": [
+    "2010-01-04",
+    "2012-12-31"
+  ],
+  "val_window": [
+    "2013-01-01",
+    "2014-12-31"
+  ],
+  "target": "y1_h1"
+}

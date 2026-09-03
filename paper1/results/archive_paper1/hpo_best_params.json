@@ -1,0 +1,7 @@
+{
+  "hidden_dim": 128,
+  "num_heads": 2,
+  "learning_rate": 0.0015304852121831463,
+  "dropout": 0.061612603179999434,
+  "num_gnn_layers": 1
+}

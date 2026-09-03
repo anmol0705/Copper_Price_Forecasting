@@ -1,0 +1,20 @@
+{
+  "yfinance": {
+    "copper": "loaded_from_cache",
+    "aluminum": "loaded_from_cache",
+    "gold": "loaded_from_cache",
+    "silver": "loaded_from_cache",
+    "crude_oil": "loaded_from_cache",
+    "dxy": "loaded_from_cache",
+    "sp500": "loaded_from_cache",
+    "vix": "loaded_from_cache",
+    "us10y_yield": "loaded_from_cache"
+  },
+  "fred": {
+    "real_yield_10y": "loaded_from_cache",
+    "high_yield_oas": "loaded_from_cache",
+    "china_pmi_proxy_oecd_business_confidence": "loaded_from_cache"
+  },
+  "china_pmi_genuine": "NOT_OBTAINABLE_FREE",
+  "china_pmi_fallback": "FRED BSCICP03CNM665S (OECD business confidence proxy, monthly)"
+}

@@ -474,3 +474,151 @@ DECISION NEEDED FROM USER: whether to fix these before running Colab (strong rec
 - [x] Minor cleanup: fredapi removed from requirements.txt (was line 7). paper/main.tex still claims FRED usage (lines 158, 265) — correctly deferred, will be fixed in Phase 4 LaTeX rewrite, not touched now to avoid conflict. Research background docs (copper_fundamentals.md, literature_gap_analysis.md) correctly left alone — they document general literature context, not false claims about this pipeline's implementation. subagent: haiku-5 model: Haiku
 - Two risks carried forward into Phase 3/4: zinc/nickel ticker substitution (NASDAQ sub-indices, needs live-data spot check in Phase 2) and PooledGraphMFGNN's 77% parameter deficit vs VMDMFGNN (needs discussion or a capacity-matched rebuild before the novelty ablation table is frozen).
 - MINOR cleanup flagged by subagent A (not yet actioned, low priority, fold into a later Haiku pass): requirements.txt, STATUS.md-adjacent docs (ORCHESTRATOR_REPORT.md, RESEARCH_BLUEPRINT.md) still mention fredapi/FRED — cosmetic only since the actual pipeline code no longer uses it. requirements.txt fredapi line should be removed before Phase 2 Colab packaging.
+
+## 2026-09-03: Repository restructure into paper1/ + paper2/ + shared root
+
+Restructured the entire repo into two clearly separated trees — `paper1/` (VMD-MFGNN)
+and `paper2/` (CuBench) — plus a small shared root, ahead of resuming the CuBench Colab
+grid run. Full details below for future reference.
+
+**What moved where:**
+- `paper1/`: manuscript (`main.tex`/`.pdf`/`.bbl`/`.blg`/`latest-main.tex`) into
+  `paper1/manuscript/`; `src/` (minus `src/cubench/`) into `paper1/src/`;
+  `configs/default.yaml` into `paper1/configs/`; `scripts/run_experiments.py` +
+  `scripts/post_hoc_analysis.py` into `paper1/scripts/`; `results/archive_paper1/` and
+  `results/archive_paper1_graphfix/` into `paper1/results/`;
+  `notebooks/archive_paper1_vmd_mfgnn/` into `paper1/notebooks/`; `requirements.txt`
+  into `paper1/`; `literature_review/paper1/` into `paper1/literature/` (deduped, see
+  below); the 6 April-2026-vintage Paper-1-era files from `docs/research/`
+  (`RESEARCH_BLUEPRINT.md`, `copper_fundamentals.md`, `gnn_literature_review.md`,
+  `literature_gap_analysis.md`, `literature_review_copper_price_forecasting.md`,
+  `vmd_research.md`) into `paper1/literature/legacy_review/`.
+- `paper2/`: `src/cubench/` into `paper2/src/cubench/`; `configs/cubench.yaml` into
+  `paper2/configs/`; all `scripts/cubench_*.py` into `paper2/scripts/`;
+  `results/cubench/` and `results/correlation_analysis/` into `paper2/results/`;
+  `notebooks/cubench_colab.ipynb` and `notebooks/correlation_feasibility_analysis.ipynb`
+  into `paper2/notebooks/`; `data/cubench/` and `data/raw_correlation_check/` into
+  `paper2/data/`; `requirements_cubench.txt` into `paper2/`; all of `tests/` (all
+  CuBench-specific) into `paper2/tests/`; the 5 CuBench doc files at `docs/` root plus
+  the 3 CuBench-era files from `docs/research/` (`correlation_feasibility_findings.md`,
+  `cubench_feasibility_report.md`, `copper_fundamentals_report.pdf` — judgment call:
+  filed under `paper2/docs/`, not `paper2/literature/`, since they're this project's own
+  research output, not downloaded literature) into `paper2/docs/`;
+  `literature_review/paper2/` into `paper2/literature/` (deduped, see below); the
+  user's manual pre-restructure Colab download (`cubench_results/` dir +
+  `cubench_results.zip`, 12MB, untracked/gitignored) into
+  `paper2/cubench_results_manual_download/`.
+- **Stayed at root** (shared / project-level): `STATUS.md`, `.gitignore`, `.venv_corr/`,
+  `docs/research_plan_CP1.md`, `docs/guidelines_CP1.pdf`, `docs/todo.txt`,
+  `docs/archive/`, `prompts/` (both files — discuss both papers), `literature_review/`
+  (now just the 3-paper `shared/` subfolder). `docs/research/` itself is now empty and
+  removed — its entire contents were genuinely paper-specific once actually read, not
+  shared, despite the original brief describing it as staying at root; see split above.
+
+**Literature dedup** (`literature_review/shared/`): arXiv 2409.08355 (Wang/Li, COMEX
+copper macro fundamentals), 2409.08356 (Wang/Lu, COMEX copper volatility forecasting),
+and 2607.12248 (Cheung, "When Directional Accuracy Lies") were downloaded independently
+into both `literature_review/paper1/` and `literature_review/paper2/` under slightly
+different filenames; byte-size-verified identical. Kept paper2's naming convention
+(fuller author/title, lowercase_underscore), moved one copy of each into
+`literature_review/shared/`, deleted the paper1-side duplicates, and added cross-
+reference notes + corrected file paths to both `paper1/literature/bibliography_index.md`
+and `paper2/literature/bibliography_index.md`.
+
+**Judgment calls (not unilateral deletions):**
+- `scratchpad/` (10 tracked files, ~1.4MB, early exploratory FRED/HGF pulls superseded
+  by the real `data/cubench/` and `data/raw_correlation_check/` pipelines) was `git mv`'d
+  to `paper2/misc_archive/scratchpad_early_pulls/` rather than deleted — flag for the
+  user to actually delete later if confirmed disposable.
+- `cubench_results.zip` (12MB, untracked, `*.zip`-gitignored) moved alongside its
+  already-extracted `cubench_results/` sibling into
+  `paper2/cubench_results_manual_download/` rather than left orphaned at root.
+
+**Junk actually removed** (not archived, no judgment call needed): all project-level
+`__pycache__/` dirs (`src/`, `scripts/`, `tests/`, `paper1/src/models/`,
+`paper2/src/cubench/`, `paper2/src/cubench/models/`) and the root `.pytest_cache/`.
+`.venv_corr/`'s internal `__pycache__` dirs were left untouched (part of the venv, not
+project code).
+
+**`.gitignore`**: rewrote every rule to the new paths (`paper1/results/**/...`,
+`paper2/results/**/...`, `paper2/data/...`, `paper1/manuscript/*.aux` etc,
+`paper2/manuscript/*.aux` etc). Verified with `git check-ignore -v` against
+`paper2/data/cubench/cache/*.parquet` and `paper2/data/cubench/raw/*.csv` — both still
+correctly ignored post-move (previously root-anchored rules would have silently stopped
+matching once these dirs moved under `paper2/`, turning ~20 raw/cache files into
+untracked `??` noise).
+
+**Colab notebook (`paper2/notebooks/cubench_colab.ipynb`) — the load-bearing fix.**
+Added `%cd {REPO_DIR}/paper2` right after the `git clone` in cell 4 (previously just
+`%cd {REPO_DIR}`), so every relative path used in the rest of the notebook
+(`src/cubench/...`, `scripts/cubench_*.py`, `configs/cubench.yaml`,
+`tests/test_leakage.py`, `data/cubench/...`, `results/cubench/...`,
+`requirements_cubench.txt`) resolves correctly without touching ~40 other cells
+individually. Also fixed the things a bare `%cd` doesn't cover: cell 6's
+`sys.path.insert(0, '/content/copper')` -> `/content/copper/paper2`; the zip-upload
+fallback instructions in cell 5 (`%cd /content/copper` -> `%cd /content/copper/paper2`);
+doc/path references in the intro markdown (cell 0), the Paper-1-comparison markdown
+(cell 2, notebook path now under `paper1/notebooks/...`), and the final
+"getting results back" instructions (cell 52, extraction target now
+`D:\copper\paper2\results\cubench`, notebook save-back path now
+`paper2/notebooks/cubench_colab.ipynb`). Grepped the full notebook JSON for
+`src/cubench`, `scripts/cubench`, `configs/cubench`, `tests/test_leakage`,
+`data/cubench`, `results/cubench`, `requirements_cubench`, `/content/copper`,
+`sys.path`, `%cd`, `os.chdir`, `git clone`, `PYTHONPATH` — every hit outside cells
+4/5/6 is a path relative to the (now-correct) `paper2/` working directory, no `os.chdir`
+or later `%cd` resets it. Re-validated with `nbformat.validate()` after editing (53
+cells, valid). Left the two archived Paper-1 Colab notebooks
+(`paper1/notebooks/archive_paper1_vmd_mfgnn/*.ipynb`) untouched on purpose — they're
+historical record of completed runs; rewriting their `/content/copper` paths would
+falsify that record for no benefit (they will not be re-run).
+
+Also fixed `paper2/notebooks/correlation_feasibility_analysis.ipynb` (local-execution
+notebook, not Colab): its hardcoded `REPO_ROOT = Path(r"D:\copper")` became
+`Path(r"D:\copper\paper2")` (its `RAW_DIR`/`RESULTS_DIR` are built from `REPO_ROOT`, and
+both `data/raw_correlation_check/` and `results/correlation_analysis/` now live under
+`paper2/`), and its intro markdown's two `docs/research/...` doc references now point to
+`paper1/literature/legacy_review/...`. Re-validated with `nbformat.validate()` (28
+cells, valid).
+
+Checked `paper2/configs/cubench.yaml` and every `paper2/scripts/cubench_*.py` /
+`paper2/src/cubench/*.py` for hardcoded paths: all use either bare relative paths
+(`"data/cubench/..."`, `"results/cubench/..."`) that resolve correctly when the working
+directory is `paper2/`, or `Path(__file__).resolve().parents[N]`-style root discovery
+whose depth (`scripts/` one level below the new root, `src/cubench/` two levels below)
+is unchanged by the move — no edits needed, verified by grep. Same check run against
+`paper1/scripts/run_experiments.py` and `paper1/src/*.py` — same pattern, same
+conclusion, no edits needed. Confirmed no `data/raw_prices.csv` or `data/vmd_modes.npy`
+ever existed in the pre-move tree (grepped the before-snapshot) — the paths referencing
+them in `paper1/src/data_pipeline.py` are just default cache-path arguments, not
+orphaned files.
+
+**`paper2/src/` has no `__init__.py`** (it only contains `cubench/`, since
+`src/__init__.py` went to `paper1/src/` per the target structure) — verified this does
+NOT break imports: Python 3's implicit namespace packages handle it fine.
+`python -c "import src.cubench.walkforward"` succeeds from `paper2/` as cwd. Left as-is
+rather than adding a file not called for by the target structure.
+
+**Verification, for real:**
+- `paper2/tests/` (all 5 files) run from `D:\copper\paper2` with `.venv_corr`:
+  **23 passed, 34 warnings in 365.73s** — matches the pre-move local baseline
+  (`10 passed .../361.31s` was `test_leakage.py` alone in an earlier STATUS.md entry;
+  this run covers the full suite: leakage, features, folds, stats_tests, backtest).
+- `paper2/notebooks/cubench_colab.ipynb` and
+  `paper2/notebooks/correlation_feasibility_analysis.ipynb` both pass
+  `nbformat.validate()`.
+- Before/after file-count sanity check (basename multiset diff of a full repo listing,
+  excluding `.git`/`.venv_corr`): every basename that disappeared is accounted for —
+  3 deduped literature PDFs, `__pycache__`/`.pytest_cache` contents (incl. the
+  `.pytest_cache`-nested `README.md`/`.gitignore`/`cache` that inflated the raw diff),
+  and directory-name artifacts of the restructure itself (`paper1`/`paper2` skeleton
+  dirs, `docs/research`, `scratchpad` renamed to `scratchpad_early_pulls`). Nothing
+  else is missing.
+
+**Not done / left for the user:** `git status` currently shows the full set of `R`
+(renames, history preserved via `git mv`) and `??` (previously-untracked
+`literature_review/`, `paper1/literature/`, `paper2/literature/`,
+`paper2/cubench_results_manual_download/`, `prompts/project_teaching_primer.md`)
+entries, all UNCOMMITTED — intentionally left staged/unstaged for the user to review
+before committing, per the task's "don't commit" instruction. `scratchpad_early_pulls/`
+was moved, not deleted — user should confirm it's genuinely disposable before removing
+it for real.

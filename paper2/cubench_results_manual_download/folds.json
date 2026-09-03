@@ -1,0 +1,268 @@
+{
+  "scheme": "expanding_window_annual_refit",
+  "initial_train_start": "2010-01-04",
+  "initial_train_end_nominal": "2014-12-31",
+  "oos_years": [
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "horizons": [
+    1,
+    5,
+    22
+  ],
+  "embargo_formula": "h + 5 trading days, purged from the END of the training window",
+  "folds": [
+    {
+      "fold": 0,
+      "oos_year": 2015,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2014-12-31",
+      "oos_start": "2015-01-02",
+      "oos_end": "2015-12-31",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2014-12-22"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2014-12-16"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2014-11-20"
+        }
+      }
+    },
+    {
+      "fold": 1,
+      "oos_year": 2016,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2015-12-31",
+      "oos_start": "2016-01-04",
+      "oos_end": "2016-12-30",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2015-12-22"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2015-12-16"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2015-11-20"
+        }
+      }
+    },
+    {
+      "fold": 2,
+      "oos_year": 2017,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2016-12-30",
+      "oos_start": "2017-01-03",
+      "oos_end": "2017-12-29",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2016-12-21"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2016-12-15"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2016-11-21"
+        }
+      }
+    },
+    {
+      "fold": 3,
+      "oos_year": 2018,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2017-12-29",
+      "oos_start": "2018-01-02",
+      "oos_end": "2018-12-31",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2017-12-20"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2017-12-14"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2017-11-20"
+        }
+      }
+    },
+    {
+      "fold": 4,
+      "oos_year": 2019,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2018-12-31",
+      "oos_start": "2019-01-02",
+      "oos_end": "2019-12-31",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2018-12-20"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2018-12-14"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2018-11-19"
+        }
+      }
+    },
+    {
+      "fold": 5,
+      "oos_year": 2020,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2019-12-31",
+      "oos_start": "2020-01-02",
+      "oos_end": "2020-12-31",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2019-12-20"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2019-12-16"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2019-11-20"
+        }
+      }
+    },
+    {
+      "fold": 6,
+      "oos_year": 2021,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2020-12-31",
+      "oos_start": "2021-01-04",
+      "oos_end": "2021-12-31",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2020-12-22"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2020-12-16"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2020-11-20"
+        }
+      }
+    },
+    {
+      "fold": 7,
+      "oos_year": 2022,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2021-12-31",
+      "oos_start": "2022-01-03",
+      "oos_end": "2022-12-30",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2021-12-22"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2021-12-16"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2021-11-22"
+        }
+      }
+    },
+    {
+      "fold": 8,
+      "oos_year": 2023,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2022-12-30",
+      "oos_start": "2023-01-03",
+      "oos_end": "2023-12-29",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2022-12-21"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2022-12-15"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2022-11-21"
+        }
+      }
+    },
+    {
+      "fold": 9,
+      "oos_year": 2024,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2023-12-29",
+      "oos_start": "2024-01-02",
+      "oos_end": "2024-12-31",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2023-12-20"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2023-12-14"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2023-11-21"
+        }
+      }
+    },
+    {
+      "fold": 10,
+      "oos_year": 2025,
+      "train_start": "2010-01-04",
+      "train_end_unembargoed": "2024-12-31",
+      "oos_start": "2025-01-02",
+      "oos_end": "2025-12-30",
+      "embargo": {
+        "h1": {
+          "trading_days": 6,
+          "train_end": "2024-12-20"
+        },
+        "h5": {
+          "trading_days": 10,
+          "train_end": "2024-12-16"
+        },
+        "h22": {
+          "trading_days": 27,
+          "train_end": "2024-11-20"
+        }
+      }
+    }
+  ]
+}

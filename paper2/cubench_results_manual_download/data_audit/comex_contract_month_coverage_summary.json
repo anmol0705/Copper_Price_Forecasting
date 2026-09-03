@@ -1,0 +1,8 @@
+{
+  "n_tickers_probed": 192,
+  "n_tickers_with_data": 1,
+  "n_http_200": 21,
+  "frac_days_with_ge2_live_contracts": 0.0,
+  "promotion_rule_threshold": 0.6,
+  "block_b_promoted_to_tier1": false
+}
