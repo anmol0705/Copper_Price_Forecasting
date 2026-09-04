@@ -163,9 +163,112 @@ def test_checkpoint_completed_flag_is_respected():
     return all(checks.values())
 
 
+def test_one_failing_cell_does_not_abort_the_grid():
+    """A single cell raising (OOM / NaN loss / transient Colab hiccup) must
+    NOT abort the whole experiment -- in a Colab "Run All" that would also
+    halt every subsequent notebook cell, ending a multi-hour unattended run
+    with nothing saved for anything after it. The failing cell must get NO
+    jsonl row (so it is naturally retried next run), and the remaining cells
+    must still execute and be recorded.
+    """
+    cleanup()
+    jsonl = WORKDIR / "grid.jsonl"
+    call_log = []
+    good = make_run_fn(call_log)
+
+    def flaky_run_fn(cell):
+        if cell["k"] == 7:
+            call_log.append(cell["k"])
+            raise RuntimeError("CUDA out of memory (simulated)")
+        return good(cell)
+
+    cells = [{"k": k} for k in [3, 5, 7, 9]]
+    results = run_resumable_grid(
+        cells, key_fn=lambda c: (c["k"],), run_fn=flaky_run_fn,
+        jsonl_path=str(jsonl), artifact_check_fn=fake_artifact_check)
+
+    ran_all = call_log == [3, 5, 7, 9]
+    print(f"{'PASS' if ran_all else 'FAIL'}: grid continued past the failing cell "
+          f"(call_log={call_log})")
+    completed = load_completed_cells(str(jsonl), artifact_check_fn=fake_artifact_check)
+    recorded_ok = set(completed.keys()) == {(3,), (5,), (9,)}
+    print(f"{'PASS' if recorded_ok else 'FAIL'}: failed cell k=7 has no jsonl row; "
+          f"3/5/9 recorded (got {set(completed.keys())})")
+    returned_ok = len(results) == 3 and all("metric" in r for r in results)
+    print(f"{'PASS' if returned_ok else 'FAIL'}: returned rows exclude the failed "
+          f"cell entirely, so downstream summary code never sees a malformed row "
+          f"(got {len(results)} rows)")
+
+    # Re-run: the previously-failing cell (now healthy) must be the ONLY one retried.
+    call_log2 = []
+    run_resumable_grid(
+        cells, key_fn=lambda c: (c["k"],), run_fn=make_run_fn(call_log2),
+        jsonl_path=str(jsonl), artifact_check_fn=fake_artifact_check)
+    retry_ok = call_log2 == [7]
+    print(f"{'PASS' if retry_ok else 'FAIL'}: next run retried ONLY the previously "
+          f"failed cell (got call_log={call_log2})")
+    return ran_all and recorded_ok and returned_ok and retry_ok
+
+
+def test_on_cell_done_fires_after_the_jsonl_line_is_durable():
+    """The notebook passes its Drive-sync helper as `on_cell_done` so each
+    finished cell of a multi-hour grid is backed up IMMEDIATELY rather than
+    only after the whole grid returns (the difference between losing one
+    in-flight cell and losing 9 completed ones when Colab disconnects).
+    Verify the callback fires once per FRESHLY-completed cell, and that the
+    cell's jsonl line is already on disk by the time it runs -- otherwise a
+    sync triggered by the callback would back up a jsonl missing the very row
+    it was called for.
+    """
+    cleanup()
+    jsonl = WORKDIR / "grid.jsonl"
+    seen = []
+
+    def on_done(key, result):
+        # Line count read from DISK, not memory: proves durability ordering.
+        n_lines = sum(1 for line in open(jsonl) if line.strip())
+        seen.append((tuple(key), n_lines))
+
+    cells = [{"k": k} for k in [3, 5, 7]]
+    run_resumable_grid(cells, key_fn=lambda c: (c["k"],),
+                       run_fn=make_run_fn([]), jsonl_path=str(jsonl),
+                       artifact_check_fn=fake_artifact_check, on_cell_done=on_done)
+    fired_ok = [k for k, _ in seen] == [(3,), (5,), (7,)]
+    durable_ok = [n for _, n in seen] == [1, 2, 3]
+    print(f"{'PASS' if fired_ok else 'FAIL'}: on_cell_done fired once per cell in "
+          f"order (got {[k for k, _ in seen]})")
+    print(f"{'PASS' if durable_ok else 'FAIL'}: each callback saw its own row already "
+          f"flushed to disk (line counts {[n for _, n in seen]})")
+
+    # Second run: everything already complete -> callback must NOT re-fire
+    # (a re-run must not trigger N redundant full Drive copies).
+    seen.clear()
+    run_resumable_grid(cells, key_fn=lambda c: (c["k"],),
+                       run_fn=make_run_fn([]), jsonl_path=str(jsonl),
+                       artifact_check_fn=fake_artifact_check, on_cell_done=on_done)
+    noop_ok = seen == []
+    print(f"{'PASS' if noop_ok else 'FAIL'}: on_cell_done did NOT fire for "
+          f"already-completed cells on resume (got {seen})")
+
+    # A raising callback (e.g. a Drive I/O hiccup) must not kill the grid.
+    cleanup()
+    calls = []
+    def bad_on_done(key, result):
+        raise OSError("simulated Drive I/O error")
+    run_resumable_grid(cells, key_fn=lambda c: (c["k"],),
+                       run_fn=make_run_fn(calls), jsonl_path=str(jsonl),
+                       artifact_check_fn=fake_artifact_check, on_cell_done=bad_on_done)
+    survive_ok = calls == [3, 5, 7]
+    print(f"{'PASS' if survive_ok else 'FAIL'}: a raising on_cell_done callback is "
+          f"swallowed and the grid completes (got {calls})")
+    return fired_ok and durable_ok and noop_ok and survive_ok
+
+
 def main():
     results = [
         test_fresh_run_executes_all_cells(),
+        test_one_failing_cell_does_not_abort_the_grid(),
+        test_on_cell_done_fires_after_the_jsonl_line_is_durable(),
         test_resume_skips_completed_and_reruns_incomplete(),
         test_artifact_missing_forces_rerun_even_with_jsonl_row(),
         test_checkpoint_completed_flag_is_respected(),

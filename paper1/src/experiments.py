@@ -142,15 +142,39 @@ def append_cell_result(jsonl_path: str, cell_key: list, result: dict) -> None:
 
 
 def run_resumable_grid(cells: List[dict], key_fn, run_fn, jsonl_path: str,
-                        artifact_check_fn=None) -> List[dict]:
+                        artifact_check_fn=None, on_cell_done=None,
+                        continue_on_error: bool = True) -> List[dict]:
     """Drives a resumable grid: for each cell in `cells`, computes its key
     via `key_fn(cell)`, skips it if already completed (per
     `load_completed_cells`), otherwise runs `run_fn(cell)` -> dict and
     appends the result immediately. Returns the full list of results (both
     freshly-run and previously-completed) in `cells` order.
+
+    on_cell_done: optional zero-or-two-arg callback invoked AFTER each
+    freshly-completed cell's jsonl line has been appended and flushed --
+    i.e. after the row is durable on local disk. The notebook passes its
+    Drive-sync helper here so a long grid (e.g. multiseed's 10 x ~30min
+    cells) backs each finished cell up to Google Drive IMMEDIATELY, rather
+    than only after the whole grid returns. Without this, a Colab
+    disconnect part-way through a multi-hour grid wipes the ephemeral VM
+    disk and loses every completed-but-unsynced cell -- the same
+    "artifact only ever lived on the ephemeral VM" failure documented in
+    docs/cubench_colab_resume_incident.md, one layer up. Called as
+    `on_cell_done(key, result)`; exceptions raised by the callback are
+    logged and swallowed (a Drive hiccup must not kill the grid).
+
+    continue_on_error: when True (default), an exception raised by
+    `run_fn` for ONE cell is logged with its traceback and the grid moves
+    on to the next cell, instead of aborting the whole experiment (and,
+    in a Colab "Run All", every subsequent notebook cell too). The failed
+    cell gets NO jsonl row, so it is naturally retried on the next run.
+    Set False to restore the old fail-fast behavior.
     """
+    import traceback
+
     completed = load_completed_cells(jsonl_path, artifact_check_fn=artifact_check_fn)
     results = []
+    failures = []
     for cell in cells:
         key = list(key_fn(cell))
         key_t = tuple(key)
@@ -159,9 +183,35 @@ def run_resumable_grid(cells: List[dict], key_fn, run_fn, jsonl_path: str,
             results.append(completed[key_t])
             continue
         logger.info(f"Running cell {key}...")
-        result = run_fn(cell)
+        try:
+            result = run_fn(cell)
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            if not continue_on_error:
+                raise
+            failures.append((key, repr(e)))
+            logger.error(
+                f"Cell {key} FAILED with {type(e).__name__}: {e}. No jsonl row "
+                f"written, so it will be retried on the next run. Continuing "
+                f"with the remaining cells.\n{traceback.format_exc()}"
+            )
+            print(f"[grid] CELL {key} FAILED ({type(e).__name__}: {e}) -- "
+                  f"skipped, will retry next run. Continuing.")
+            continue
         append_cell_result(jsonl_path, key, result)
         results.append({"cell_key": key, **result})
+        if on_cell_done is not None:
+            try:
+                on_cell_done(key, result)
+            except Exception as e:  # a Drive hiccup must not kill the grid
+                logger.warning(f"on_cell_done({key}) raised {type(e).__name__}: {e} "
+                               f"-- ignored, grid continues.")
+    if failures:
+        msg = ("; ".join(f"{k}: {e}" for k, e in failures))
+        logger.warning(f"{len(failures)} cell(s) failed and were skipped: {msg}")
+        print(f"[grid] {len(failures)} of {len(cells)} cell(s) failed and were "
+              f"skipped (re-run this cell to retry them): {msg}")
     return results
 
 
@@ -269,7 +319,8 @@ def _train_and_diagnose(model_ctor, fresh_model_ctor, config: dict, data: Dict,
 
 def run_k_sweep(base_config: dict, k_values: List[int] = (3, 5, 7, 9),
                  hpo_best_params_path: str = "results/archive_paper1/hpo_best_params.json",
-                 results_dir: str = "results/robustness/k_sweep") -> List[dict]:
+                 results_dir: str = "results/robustness/k_sweep",
+                 on_cell_done=None) -> List[dict]:
     """Retrains full VMD-MFGNN at each K in `k_values`, using the existing
     tuned hyperparameters (item 1). Each K gets its own VMD-modes cache
     (data_pipeline.create_datasets(modes_cache_path=...)) so K values never
@@ -327,7 +378,8 @@ def run_k_sweep(base_config: dict, k_values: List[int] = (3, 5, 7, 9),
     cells = [{"K": k} for k in k_values]
     return run_resumable_grid(cells, key_fn=lambda c: (c["K"],),
                                run_fn=run_cell, jsonl_path=jsonl_path,
-                               artifact_check_fn=artifact_check)
+                               artifact_check_fn=artifact_check,
+                               on_cell_done=on_cell_done)
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +389,8 @@ def run_k_sweep(base_config: dict, k_values: List[int] = (3, 5, 7, 9),
 def run_decomposition_comparison(base_config: dict,
                                   methods: List[str] = ("vmd", "emd"),
                                   hpo_best_params_path: str = "results/archive_paper1/hpo_best_params.json",
-                                  results_dir: str = "results/robustness/decomposition") -> List[dict]:
+                                  results_dir: str = "results/robustness/decomposition",
+                                  on_cell_done=None) -> List[dict]:
     """Retrains full model with each decomposition `method` (default: VMD
     vs EMD; pass methods=("vmd","emd","ceemdan") to include the optional,
     compute-expensive CEEMDAN variant -- see CEEMDANDecomposer's docstring
@@ -363,8 +416,18 @@ def run_decomposition_comparison(base_config: dict,
     def run_cell(cell: dict) -> dict:
         method = cell["method"]
         tuned_config = _build_tuned_config(base_config, best_params)
+        # Reuse the main pipeline's existing VMD cache for the VMD arm at the
+        # config's own K, exactly as run_k_sweep and hpo.build_data_for_k_values
+        # already do -- otherwise the VMD arm would write a SEPARATE
+        # data/vmd_modes_K5.npy and needlessly recompute a decomposition that
+        # data/vmd_modes.npy already holds (~30-40 min of pure waste, every
+        # fresh Colab session).
+        if method == "vmd" and K == base_config["vmd"]["K"]:
+            cache_path = "data/vmd_modes.npy"
+        else:
+            cache_path = f"data/{method}_modes_K{K}.npy"
         data = create_datasets(tuned_config, decomposition_method=method,
-                                modes_cache_path=f"data/{method}_modes_K{K}.npy")
+                                modes_cache_path=cache_path)
         ckpt_path = f"{results_dir}/checkpoints/full_model_{method}.pt"
 
         def ctor():
@@ -388,7 +451,8 @@ def run_decomposition_comparison(base_config: dict,
     cells = [{"method": m} for m in methods]
     return run_resumable_grid(cells, key_fn=lambda c: (c["method"],),
                                run_fn=run_cell, jsonl_path=jsonl_path,
-                               artifact_check_fn=artifact_check)
+                               artifact_check_fn=artifact_check,
+                               on_cell_done=on_cell_done)
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +462,8 @@ def run_decomposition_comparison(base_config: dict,
 def run_loss_comparison(base_config: dict,
                          loss_fns: List[str] = ("mse", "mae", "huber"),
                          hpo_best_params_path: str = "results/archive_paper1/hpo_best_params.json",
-                         results_dir: str = "results/robustness/loss_comparison") -> List[dict]:
+                         results_dir: str = "results/robustness/loss_comparison",
+                         on_cell_done=None) -> List[dict]:
     """Retrains full model under each `training.loss_fn` choice. Reuses ONE
     data build (decomposition doesn't depend on the loss function) across all
     loss choices -- only the trainer's loss changes.
@@ -443,7 +508,8 @@ def run_loss_comparison(base_config: dict,
     cells = [{"loss_fn": lf} for lf in loss_fns]
     return run_resumable_grid(cells, key_fn=lambda c: (c["loss_fn"],),
                                run_fn=run_cell, jsonl_path=jsonl_path,
-                               artifact_check_fn=artifact_check)
+                               artifact_check_fn=artifact_check,
+                               on_cell_done=on_cell_done)
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +520,8 @@ def run_multiseed(base_config: dict,
                    seeds: List[int] = (42, 43, 44, 45, 46),
                    variants: List[str] = ("full_model", "pooled_graph_matched_dim"),
                    hpo_best_params_path: str = "results/archive_paper1/hpo_best_params.json",
-                   results_dir: str = "results/robustness/multiseed") -> Dict:
+                   results_dir: str = "results/robustness/multiseed",
+                   on_cell_done=None) -> Dict:
     """Re-runs ONLY full_model and pooled_graph_matched_dim (the two ablation
     rows carrying RQ1's central claim, per STATUS.md's already-recommended
     "middle path") across `seeds`, reporting mean +/- std per horizon plus a
@@ -523,35 +590,62 @@ def run_multiseed(base_config: dict,
     cells = [{"variant": v, "seed": s} for v in variants for s in seeds]
     results = run_resumable_grid(
         cells, key_fn=lambda c: (c["variant"], c["seed"]),
-        run_fn=run_cell, jsonl_path=jsonl_path, artifact_check_fn=artifact_check)
+        run_fn=run_cell, jsonl_path=jsonl_path, artifact_check_fn=artifact_check,
+        on_cell_done=on_cell_done)
 
     # ---- Aggregate mean/std per variant/horizon ----
+    # NOTE: `results` may legitimately contain FEWER rows than `cells` -- a cell
+    # whose training raised (OOM, NaN, transient Colab hiccup) is logged and
+    # skipped by run_resumable_grid rather than aborting the whole grid, so this
+    # aggregation must tolerate missing (variant, seed) combinations rather than
+    # KeyError-ing or averaging an empty list into a bare NaN warning.
+    import numpy as np
+
     horizons = data["horizons"]
     aggregate = {v: {} for v in variants}
     per_variant_per_horizon = {v: {h: [] for h in horizons} for v in variants}
+    seeds_by_variant = {v: [] for v in variants}
     for row in results:
-        v, tm = row["variant"], row["test_metrics"]
+        v, tm = row.get("variant"), row.get("test_metrics")
+        if v not in per_variant_per_horizon or not tm:
+            continue
+        seeds_by_variant[v].append(row.get("seed"))
         for h in horizons:
             per_variant_per_horizon[v][h].append(tm[f"h{h}"]["rmse"])
     for v in variants:
         for h in horizons:
             vals = per_variant_per_horizon[v][h]
-            import numpy as np
             aggregate[v][f"h{h}"] = {
-                "rmse_mean": float(np.mean(vals)), "rmse_std": float(np.std(vals)),
+                "rmse_mean": float(np.mean(vals)) if vals else float("nan"),
+                "rmse_std": float(np.std(vals)) if vals else float("nan"),
                 "n_seeds": len(vals),
             }
 
+    # The paired test is only meaningful over seeds BOTH variants completed --
+    # pair explicitly on the shared seed set rather than assuming both lists are
+    # full and index-aligned (they are not, if any cell failed or is still
+    # pending a later session).
     significance = {}
-    if len(variants) == 2 and all(len(per_variant_per_horizon[v][horizons[0]]) == len(seeds)
-                                   for v in variants):
+    if len(variants) == 2:
         v1, v2 = variants
-        for h in horizons:
-            significance[f"h{h}"] = paired_seed_significance_test(
-                per_variant_per_horizon[v1][h], per_variant_per_horizon[v2][h])
+        shared = [s for s in seeds if s in set(seeds_by_variant[v1]) & set(seeds_by_variant[v2])]
+        if len(shared) >= 2:
+            idx1 = {s: i for i, s in enumerate(seeds_by_variant[v1])}
+            idx2 = {s: i for i, s in enumerate(seeds_by_variant[v2])}
+            for h in horizons:
+                a = [per_variant_per_horizon[v1][h][idx1[s]] for s in shared]
+                b = [per_variant_per_horizon[v2][h][idx2[s]] for s in shared]
+                significance[f"h{h}"] = paired_seed_significance_test(a, b)
+        else:
+            logger.warning(
+                f"Paired significance test skipped: only {len(shared)} seed(s) "
+                f"completed for BOTH variants (need >= 2). Re-run this section "
+                f"once the remaining (variant, seed) cells have finished.")
 
     return {"cells": results, "aggregate": aggregate, "significance": significance,
-            "variants_compared": list(variants)}
+            "variants_compared": list(variants),
+            "seeds_completed": {v: sorted(s for s in seeds_by_variant[v] if s is not None)
+                                 for v in variants}}
 
 
 # ---------------------------------------------------------------------------
@@ -560,7 +654,8 @@ def run_multiseed(base_config: dict,
 
 def run_wider_hpo(base_config: dict, k_values: Optional[List[int]] = (3, 5, 7, 9),
                    n_trials: int = 30, trial_epochs: int = 25,
-                   results_dir: str = "results/robustness/wider_hpo") -> dict:
+                   results_dir: str = "results/robustness/wider_hpo",
+                   on_trial_done=None) -> dict:
     """Runs the wider Optuna search (K + weight_decay + batch_size added to
     the base 5-parameter space), writing to `results_dir` (NOT
     results/hpo_best_params.json, so the original tuned-hyperparameter run
@@ -589,4 +684,11 @@ def run_wider_hpo(base_config: dict, k_values: Optional[List[int]] = (3, 5, 7, 9
         search_weight_decay=True, search_batch_size=True, data_by_k=data_by_k,
         results_dir=results_dir, best_params_filename="hpo_wider_best_params.json",
         trials_csv_filename="hpo_wider_trials.csv",
+        # Durable Optuna study, so a Colab disconnect part-way through the 30
+        # trials resumes from the finished ones instead of restarting at zero.
+        # It lives inside results_dir, so the notebook's Drive sync of that
+        # directory carries it across sessions with no extra wiring.
+        storage_path=f"{results_dir}/hpo_wider_study.db",
+        study_name="vmd_mfgnn_wider_hpo",
+        on_trial_done=on_trial_done,
     )

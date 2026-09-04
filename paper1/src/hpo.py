@@ -22,7 +22,10 @@ def run_hpo(config: dict, data: Dict, n_trials: int = 15, trial_epochs: int = 25
             data_by_k: Optional[Dict[int, Dict]] = None,
             results_dir: str = "results",
             best_params_filename: str = "hpo_best_params.json",
-            trials_csv_filename: str = "hpo_trials.csv") -> dict:
+            trials_csv_filename: str = "hpo_trials.csv",
+            storage_path: Optional[str] = None,
+            study_name: str = "vmd_mfgnn_hpo",
+            on_trial_done=None) -> dict:
     """Run an Optuna study to tune VMD-MFGNN hyperparameters.
 
     Base search space (always on, unchanged from the original 4-trial-run
@@ -157,8 +160,48 @@ def run_hpo(config: dict, data: Dict, n_trials: int = 15, trial_epochs: int = 25
 
     sampler = TPESampler(seed=seed)
     pruner = MedianPruner()
-    study = optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner)
-    study.optimize(objective, n_trials=n_trials)
+    if storage_path is None:
+        # Unchanged, already-verified in-memory behavior (the default call
+        # from run_all_experiments takes this path byte-for-byte as before).
+        study = optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner)
+        remaining = n_trials
+    else:
+        # Durable, resumable study: a Colab disconnect mid-HPO must not throw
+        # away every finished trial. The SQLite file lives under results_dir,
+        # so the notebook's existing Drive sync of that directory backs it up
+        # and restores it on a fresh session automatically.
+        Path(storage_path).parent.mkdir(parents=True, exist_ok=True)
+        study = optuna.create_study(
+            direction="minimize", sampler=sampler, pruner=pruner,
+            storage=f"sqlite:///{storage_path}", study_name=study_name,
+            load_if_exists=True)
+        # optuna's n_trials means "run this many MORE trials", not "reach this
+        # total" -- so on resume we must subtract what the restored study
+        # already finished, or a resumed session would run a full extra 30.
+        already = sum(
+            1 for t in study.trials
+            if t.state in (optuna.trial.TrialState.COMPLETE,
+                           optuna.trial.TrialState.PRUNED))
+        remaining = max(0, n_trials - already)
+        logger.info(f"Resumable HPO study '{study_name}' at {storage_path}: "
+                    f"{already} trial(s) already finished, running {remaining} more "
+                    f"to reach n_trials={n_trials}.")
+    if remaining > 0:
+        # `on_trial_done` (the notebook passes its Drive-sync helper) runs after
+        # EVERY trial, so a disconnect part-way through a multi-hour HPO loses
+        # at most the in-flight trial rather than the whole study database.
+        callbacks = None
+        if on_trial_done is not None:
+            def _cb(study_, trial_):
+                try:
+                    on_trial_done(study_, trial_)
+                except Exception as e:  # a Drive hiccup must not kill the study
+                    logger.warning(f"on_trial_done raised {type(e).__name__}: {e} "
+                                   f"-- ignored, HPO continues.")
+            callbacks = [_cb]
+        study.optimize(objective, n_trials=remaining, callbacks=callbacks)
+    else:
+        logger.info("HPO target trial count already reached; nothing to run.")
 
     best_params = study.best_trial.params
     # Fill in any dimension not searched with the base config's value, so
