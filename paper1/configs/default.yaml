@@ -65,6 +65,11 @@ training:
   # embeddings toward zero faster than the weak task gradient can resist,
   # collapsing the learned adjacency to uniform (1/N).
   no_decay_graph_embeddings: false
+  # Selectable training loss (item 3: alternative loss function comparison).
+  # "mse" (default) reproduces unchanged, already-verified behavior (plain
+  # F.mse_loss, exactly as before this option existed). Other options:
+  # "mae" (F.l1_loss), "huber" (F.smooth_l1_loss, beta=1.0). See src/trainer.py.
+  loss_fn: "mse"
 
 # Hyperparameter optimization (Optuna, TPE + median pruning) -- opt-in, and
 # scoped to VMD-MFGNN (the proposed model) ONLY. The 6 locked baselines
@@ -77,3 +82,14 @@ hpo:
   enabled: true
   n_trials: 10
   trial_epochs: 25
+  # OFF by default (False = unchanged, already-verified 4-parameter search
+  # space: hidden_dim/num_heads/learning_rate/dropout/num_gnn_layers). When
+  # True, also searches weight_decay (log-uniform) and batch_size
+  # (categorical) -- see item 5 (wider HPO pass). K is searched only when a
+  # caller explicitly passes `data_by_k` to run_hpo() (see hpo.py / the
+  # robustness-experiments notebook's Section 7), since tuning K requires
+  # pre-built per-K datasets (VMD/EMD decomposition is not re-run per trial).
+  # This checked-in default config is NEVER changed to widen the search --
+  # the wider pass is invoked explicitly, out-of-band, by the notebook.
+  search_weight_decay: false
+  search_batch_size: false

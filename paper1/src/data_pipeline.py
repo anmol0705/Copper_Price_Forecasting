@@ -291,6 +291,253 @@ class VMDDecomposerExpanding:
         return all_modes
 
 
+class EMDDecomposer:
+    """True daily-refit rolling-window EMD (Empirical Mode Decomposition) --
+    a drop-in alternative decomposer to `VMDDecomposer`, mirroring its exact
+    interface and leakage-safety discipline (see item 2 of the robustness
+    experiments: alternative decomposition method comparison).
+
+    At every trading day t, EMD is run from scratch (via `PyEMD.EMD`, the
+    `EMD-signal` package's sifting-based implementation) on the window
+    signal[max(0, t-window+1) : t+1] -- strictly data up to and including day
+    t, never anything after it -- and only the LAST point of each resulting
+    IMF (intrinsic mode function) is kept as that day's feature value. This
+    is architecturally identical to `VMDDecomposer`'s daily-refit rolling
+    scheme, just swapping the decomposition algorithm (EMD's data-driven
+    recursive sifting instead of VMD's variational/ADMM optimization).
+
+    Mode-count caveat (the key structural difference from VMD): EMD does not
+    take a fixed number-of-modes parameter -- the sifting process determines
+    how many IMFs a given window naturally decomposes into (typically
+    ~log2(window_length), often 6-9 IMFs for a 252-day window), and this can
+    vary slightly from window to window. To keep a fixed-width (K, T) output
+    array (so it slots into `CopperDataset`/the rest of the pipeline
+    unchanged), the K highest-frequency IMFs (the *first* K, since PyEMD
+    returns IMFs ordered highest-frequency first) are kept in slots
+    [0, K-1). If EMD produces MORE than K IMFs for a window (including its
+    final residual/trend), everything beyond the first K-1 IMFs is SUMMED
+    into slot K-1 (mirroring VMD's mode-K-1 acting as the coarsest/lowest-
+    frequency band) so no information is silently dropped. If EMD produces
+    FEWER than K IMFs, the unused trailing slots are zero-padded. This
+    zero-padding/summing choice, and the resulting effective mode count, must
+    be reported explicitly in any comparison against VMD -- it is NOT the
+    same guarantee VMD gives (VMD is asked for exactly K bands and returns
+    exactly K).
+
+    Because IMF ordering from independent per-window sifts is not guaranteed
+    to align in any particular frequency sense across days the way VMD's
+    omega-sort re-establishes, no re-sorting is applied here beyond PyEMD's
+    own convention (highest-frequency IMF first, which is stable in practice
+    because sifting always peels off the fastest-oscillating component
+    first) -- this mirrors VMD's mode-identity caveat but resolved by PyEMD's
+    own algorithmic convention rather than an explicit post-hoc frequency
+    sort.
+    """
+
+    def __init__(self, K: int = 5, rolling_window: int = 252,
+                 max_imfs: Optional[int] = None):
+        self.K = K
+        self.rolling_window = rolling_window
+        # PyEMD's EMD(max_imf=...) caps sifting early; None (PyEMD default:
+        # unlimited, i.e. -1) lets it decompose naturally and we truncate/sum
+        # down to K afterward as documented above.
+        self.max_imfs = max_imfs
+
+    def decompose_series(self, signal: np.ndarray) -> np.ndarray:
+        """Decompose a single series using rolling-window EMD, refit at
+        EVERY trading day. Returns: (K, T) array of modes.
+        """
+        from PyEMD import EMD
+
+        T = len(signal)
+        modes = np.zeros((self.K, T))
+        win = self.rolling_window
+
+        for t in range(T):
+            start = max(0, t - win + 1)
+            segment = signal[start:t + 1].astype(np.float64)  # strictly data[start..t]
+            if len(segment) < 8:
+                # Too short for a meaningful sift (EMD needs enough points to
+                # find extrema); fall back to holding the raw value in slot 0,
+                # same convention as VMDDecomposer's short-segment fallback.
+                modes[0, t] = segment[-1]
+                continue
+            try:
+                emd = EMD()
+                if self.max_imfs is not None:
+                    imfs = emd.emd(segment, max_imf=self.max_imfs)
+                else:
+                    imfs = emd.emd(segment)
+                n_imfs = imfs.shape[0]
+                if n_imfs == 0:
+                    modes[0, t] = segment[-1]
+                    continue
+                n_keep = min(self.K, n_imfs)
+                for k in range(n_keep - 1):
+                    modes[k, t] = imfs[k, -1]
+                # Last kept slot absorbs the k-th IMF plus everything beyond
+                # (including EMD's implicit trend/residual) so no information
+                # is silently dropped when n_imfs > K.
+                modes[n_keep - 1, t] = imfs[n_keep - 1:, -1].sum()
+                # If n_imfs < K, slots [n_imfs, K) stay at their zero-init.
+            except Exception as e:
+                logger.warning(f"EMD failed at t={t}: {e}")
+                modes[0, t] = segment[-1]
+
+        return modes
+
+    def decompose_all(self, df: pd.DataFrame,
+                      cache_path: Optional[str] = None) -> np.ndarray:
+        """Decompose all variables. Returns: (num_vars, K, T) array."""
+        if cache_path and Path(cache_path).exists():
+            logger.info(f"Loading cached EMD modes from {cache_path}")
+            return np.load(cache_path)
+
+        num_vars = df.shape[1]
+        T = df.shape[0]
+        all_modes = np.zeros((num_vars, self.K, T))
+
+        for i, col in enumerate(df.columns):
+            logger.info(f"  EMD decomposing {col} ({i+1}/{num_vars})...")
+            signal = df[col].values.astype(np.float64)
+            all_modes[i] = self.decompose_series(signal)
+
+        if cache_path:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            np.save(cache_path, all_modes)
+            logger.info(f"Saved EMD modes to {cache_path}")
+
+        return all_modes
+
+
+class CEEMDANDecomposer:
+    """EXPERIMENTAL / OPTIONAL, NOT part of the primary decomposition
+    comparison -- see item 2's "if also feasible" clause.
+
+    CEEMDAN (Complete Ensemble EMD with Adaptive Noise) is implemented here
+    for completeness (via `PyEMD.CEEMDAN`), with the SAME true-daily-refit
+    rolling-window interface as `EMDDecomposer`/`VMDDecomposer`. It is
+    deliberately NOT wired into the main comparison run by default because of
+    a real, disclosed compute-cost constraint: CEEMDAN is an ensemble method
+    that reruns EMD `trials` times per window (each with different injected
+    noise) and averages -- even at a reduced `trials=20` (vs PyEMD's default
+    100), that is a ~20x per-window cost multiplier over plain EMD. Applied
+    at every trading day (true daily refit, matching this project's
+    leakage-safety discipline -- no shortcuts to a cheaper expanding/refit-
+    interval scheme are taken here, to keep the comparison apples-to-apples
+    with VMDDecomposer/EMDDecomposer), this would push one-time CPU cost from
+    EMD's/VMD's tens of minutes into many hours to ~1+ day for the full
+    ~4,000-day x 8-variable dataset on a single Colab CPU core -- not a
+    realistic addition to an already multi-section robustness notebook on a
+    free/standard Colab time budget.
+
+    ADDITIONAL, EMPIRICALLY-DISCOVERED cost factor (found during this task's
+    local verification, not merely theorized): PyEMD's CEEMDAN defaults to
+    `parallel=True`, spawning a fresh `multiprocessing` worker pool PER
+    CALL. On Windows (spawn-based process creation, no fork), that per-call
+    pool-spawn overhead dominates wall-clock time at small window sizes far
+    more than the `trials` multiplier alone would predict -- an initial
+    local leakage-test attempt at T=120/rolling_window=40/trials=5 did not
+    finish within 6 minutes of wall-clock time before being killed, an order
+    of magnitude slower than a naive trials-multiplier estimate would
+    suggest. `parallel=False` (set below) avoids that per-window pool-spawn
+    entirely, trading it for a straightforwardly serial (still `trials`-x
+    slower than plain EMD, but no per-call multiprocessing overhead added on
+    top) cost -- confirmed to actually finish locally (see this task's
+    report for the real, timed local verification result with
+    `parallel=False`). Any future large-compute-budget run of this class
+    SHOULD use `parallel=False` for this reason, unless run on a
+    fork-capable OS (Linux, which Colab's runtime is) where the per-call
+    spawn cost is much lower -- even there, benchmark a handful of windows
+    before committing to a full run.
+
+    A SECOND empirically-discovered issue (see `__init__`'s docstring note):
+    PyEMD's CEEMDAN does not seed its noise RNG by default, so naively
+    calling it gives non-reproducible results run-to-run for the identical
+    window -- fixed here via `noise_seed(random_seed_base + t)` per window.
+
+    It is included in this file, tested for correctness/leakage-safety at
+    small scale (see the local verification in this task's report), and
+    left available for a future run with a larger compute budget, rather
+    than silently omitted.
+    """
+
+    def __init__(self, K: int = 5, rolling_window: int = 252, trials: int = 20,
+                 parallel: bool = False, random_seed_base: int = 0):
+        self.K = K
+        self.rolling_window = rolling_window
+        self.trials = trials
+        # False by default -- see the class docstring's empirical finding on
+        # Windows' per-call multiprocessing-pool-spawn overhead. Colab runs
+        # on Linux (fork-based), where True may be faster; benchmark first.
+        self.parallel = parallel
+        # SECOND empirically-discovered issue (also found during this task's
+        # local verification): PyEMD's CEEMDAN does NOT seed its internal
+        # noise RNG by default -- each `CEEMDAN().ceemdan(...)` call draws
+        # fresh, unseeded ensemble noise, so decomposing the SAME window
+        # twice gives DIFFERENT results, and a leakage test comparing two
+        # runs would show "differences" at every t purely from this
+        # nondeterminism, not from any actual future-data leak (this is
+        # exactly what the first attempt at this test showed before the fix
+        # below). Fixed by seeding `noise_seed(random_seed_base + t)`
+        # per-day BEFORE each window's decomposition -- deterministic per
+        # (t, random_seed_base), so the same day's window always produces
+        # the same result, and re-running decompose_series is reproducible
+        # (a real requirement for any published result using this
+        # decomposer, not just for the leakage test).
+        self.random_seed_base = random_seed_base
+
+    def decompose_series(self, signal: np.ndarray) -> np.ndarray:
+        from PyEMD import CEEMDAN
+
+        T = len(signal)
+        modes = np.zeros((self.K, T))
+        win = self.rolling_window
+
+        for t in range(T):
+            start = max(0, t - win + 1)
+            segment = signal[start:t + 1].astype(np.float64)
+            if len(segment) < 8:
+                modes[0, t] = segment[-1]
+                continue
+            try:
+                ceemdan = CEEMDAN(trials=self.trials, parallel=self.parallel)
+                ceemdan.noise_seed(self.random_seed_base + t)
+                imfs = ceemdan.ceemdan(segment)
+                n_imfs = imfs.shape[0]
+                if n_imfs == 0:
+                    modes[0, t] = segment[-1]
+                    continue
+                n_keep = min(self.K, n_imfs)
+                for k in range(n_keep - 1):
+                    modes[k, t] = imfs[k, -1]
+                modes[n_keep - 1, t] = imfs[n_keep - 1:, -1].sum()
+            except Exception as e:
+                logger.warning(f"CEEMDAN failed at t={t}: {e}")
+                modes[0, t] = segment[-1]
+
+        return modes
+
+    def decompose_all(self, df: pd.DataFrame,
+                      cache_path: Optional[str] = None) -> np.ndarray:
+        if cache_path and Path(cache_path).exists():
+            logger.info(f"Loading cached CEEMDAN modes from {cache_path}")
+            return np.load(cache_path)
+
+        num_vars = df.shape[1]
+        T = df.shape[0]
+        all_modes = np.zeros((num_vars, self.K, T))
+        for i, col in enumerate(df.columns):
+            logger.info(f"  CEEMDAN decomposing {col} ({i+1}/{num_vars})...")
+            signal = df[col].values.astype(np.float64)
+            all_modes[i] = self.decompose_series(signal)
+
+        if cache_path:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            np.save(cache_path, all_modes)
+        return all_modes
+
+
 class VMDDecomposerFast:
     """DEBUG-ONLY: batch VMD, decomposes the full series once (non-rolling).
     Fast, but the decomposition of the training period is computed jointly
@@ -362,29 +609,34 @@ def _hash_price_array(values: np.ndarray) -> str:
     return hashlib.sha256(np.ascontiguousarray(values).tobytes()).hexdigest()
 
 
-def build_vmd_modes(prices: pd.DataFrame, vc: dict, dc: dict,
-                     cache_path: str = "data/vmd_modes.npy",
-                     meta_path: Optional[str] = None,
-                     debug_fast: bool = False) -> np.ndarray:
-    """Build (or load from cache) VMD-decomposed modes for all variables.
+def build_decomposed_modes(prices: pd.DataFrame, vc: dict, dc: dict,
+                            cache_path: str = "data/vmd_modes.npy",
+                            meta_path: Optional[str] = None,
+                            debug_fast: bool = False,
+                            method: str = "vmd") -> np.ndarray:
+    """Build (or load from cache) decomposed modes for all variables, for
+    whichever decomposition `method` is selected. This generalizes the
+    original VMD-only `build_vmd_modes` (kept below as a thin backward-
+    compatible wrapper calling this with method="vmd") to also support "emd"
+    and "ceemdan" (item 2: alternative decomposition method comparison) --
+    both mirror VMD's true-daily-refit rolling-window leakage-safety
+    discipline exactly (see `EMDDecomposer`/`CEEMDANDecomposer` docstrings).
 
-    debug_fast: if True, uses `VMDDecomposerFast` (full-series batch VMD).
-    This is fast but LEAKS future/test-period data into training-period
-    decompositions -- it exists only for quick, throwaway debugging/iteration
-    and must NEVER be the default used for real experiments or reported
-    metrics. The default (debug_fast=False) uses the leakage-safe, true
-    daily-refit `VMDDecomposer` (rolling window of `vc["rolling_window"]`
-    (default 252) trading days, refit at every single day -- see its
-    docstring for why this replaced the old `VMDDecomposerExpanding`
-    carry-forward approach, which produced piecewise-constant "staircase"
-    features).
+    method: "vmd" (default, unchanged behavior), "emd", or "ceemdan".
+    debug_fast: only meaningful for method=="vmd" (routes to
+        `VMDDecomposerFast`, the leaky full-series batch decomposer, for
+        quick throwaway debugging only). Ignored for "emd"/"ceemdan" (which
+        have no fast/leaky variant implemented -- always leakage-safe).
 
     Caching: results are cached to `cache_path` (a .npy) plus a JSON metadata
-    sidecar recording the split dates, VMD parameters, refit cadence, and a
-    sha256 hash of the input price array. If any of those change (e.g. a
-    fresh data pull with different prices, or different K/alpha), the cache
-    is treated as stale and recomputed -- so a prior run's cache can never be
-    silently reused against new/different data.
+    sidecar recording the split dates, decomposition method + its parameters,
+    and a sha256 hash of the input price array. If any of those change (e.g.
+    a fresh data pull with different prices, a different K, or a different
+    `method`), the cache is treated as stale and recomputed -- so a prior
+    run's cache can never be silently reused against new/different
+    data/method. Callers doing a method/K comparison should pass distinct
+    `cache_path`s per (method, K) combination (see `experiments.py`) so each
+    variant's cache persists independently rather than invalidating siblings.
     """
     cache_path = Path(cache_path)
     meta_path = Path(meta_path) if meta_path is not None else \
@@ -395,13 +647,9 @@ def build_vmd_modes(prices: pd.DataFrame, vc: dict, dc: dict,
     rolling_window = vc.get("rolling_window", 252)
 
     meta = {
+        "method": method,
         "K": vc["K"],
-        "alpha": vc["alpha"],
-        "tau": vc["tau"],
-        "tol": vc["tol"],
         "rolling_window": rolling_window,
-        "decomposer": "VMDDecomposerFast" if debug_fast else "VMDDecomposer",
-        "debug_fast": debug_fast,
         "split_dates": {
             "start_date": dc.get("start_date"),
             "train_end": dc.get("train_end"),
@@ -412,6 +660,14 @@ def build_vmd_modes(prices: pd.DataFrame, vc: dict, dc: dict,
         "num_rows": int(len(prices)),
         "data_hash": data_hash,
     }
+    if method == "vmd":
+        meta.update({
+            "alpha": vc["alpha"], "tau": vc["tau"], "tol": vc["tol"],
+            "decomposer": "VMDDecomposerFast" if debug_fast else "VMDDecomposer",
+            "debug_fast": debug_fast,
+        })
+    elif method == "ceemdan":
+        meta["trials"] = vc.get("ceemdan_trials", 20)
 
     if cache_path.exists() and meta_path.exists():
         try:
@@ -419,36 +675,74 @@ def build_vmd_modes(prices: pd.DataFrame, vc: dict, dc: dict,
                 cached_meta = json.load(f)
         except (json.JSONDecodeError, OSError):
             cached_meta = {}
-        if cached_meta == meta:
-            logger.info(f"Loading cached VMD modes from {cache_path} "
-                        f"(data hash + params match, debug_fast={debug_fast})")
+        # Backward compatibility: a cache written by the OLD build_vmd_modes
+        # (before this function existed) has no "method" key at all. Treat
+        # such a cache as matching a method=="vmd" request as long as every
+        # OTHER key matches, so pre-existing caches (including ones restored
+        # from Drive from before this change) are not needlessly invalidated
+        # -- avoids silently forcing an expensive recompute + falsifying any
+        # "warm cache" wall-clock estimate that assumed the old cache still
+        # hits.
+        compare_meta = cached_meta
+        if method == "vmd" and "method" not in cached_meta:
+            compare_meta = dict(cached_meta)
+            compare_meta["method"] = "vmd"
+        if compare_meta == meta:
+            logger.info(f"Loading cached {method.upper()} modes from {cache_path} "
+                        f"(data hash + params match)")
             return np.load(cache_path)
         else:
-            logger.warning(f"VMD cache at {cache_path} is stale (data hash or "
-                            f"params changed) -- recomputing")
+            logger.warning(f"{method.upper()} cache at {cache_path} is stale "
+                            f"(data hash or params changed) -- recomputing")
 
-    if debug_fast:
-        logger.warning("debug_fast=True: using VMDDecomposerFast (full-series "
-                        "batch VMD). This LEAKS future/test data into training "
-                        "decompositions -- for quick debugging only, never for "
-                        "reported results.")
-        decomposer = VMDDecomposerFast(K=vc["K"], alpha=vc["alpha"],
-                                        tau=vc["tau"], tol=vc["tol"])
+    if method == "vmd":
+        if debug_fast:
+            logger.warning("debug_fast=True: using VMDDecomposerFast (full-series "
+                            "batch VMD). This LEAKS future/test data into training "
+                            "decompositions -- for quick debugging only, never for "
+                            "reported results.")
+            decomposer = VMDDecomposerFast(K=vc["K"], alpha=vc["alpha"],
+                                            tau=vc["tau"], tol=vc["tol"])
+            modes = decomposer.decompose_all(prices, cache_path=None)
+        else:
+            decomposer = VMDDecomposer(K=vc["K"], alpha=vc["alpha"],
+                                        tau=vc["tau"], tol=vc["tol"],
+                                        max_iter=vc.get("max_iter", 500),
+                                        rolling_window=rolling_window)
+            modes = decomposer.decompose_all(prices, cache_path=None)
+    elif method == "emd":
+        decomposer = EMDDecomposer(K=vc["K"], rolling_window=rolling_window)
+        modes = decomposer.decompose_all(prices, cache_path=None)
+    elif method == "ceemdan":
+        decomposer = CEEMDANDecomposer(K=vc["K"], rolling_window=rolling_window,
+                                        trials=vc.get("ceemdan_trials", 20))
         modes = decomposer.decompose_all(prices, cache_path=None)
     else:
-        decomposer = VMDDecomposer(K=vc["K"], alpha=vc["alpha"],
-                                    tau=vc["tau"], tol=vc["tol"],
-                                    max_iter=vc.get("max_iter", 500),
-                                    rolling_window=rolling_window)
-        modes = decomposer.decompose_all(prices, cache_path=None)
+        raise ValueError(f"Unknown decomposition method: {method!r} "
+                          f"(expected 'vmd', 'emd', or 'ceemdan')")
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(cache_path, modes)
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
-    logger.info(f"Saved VMD modes to {cache_path} and metadata to {meta_path}")
+    logger.info(f"Saved {method.upper()} modes to {cache_path} and metadata to {meta_path}")
 
     return modes
+
+
+def build_vmd_modes(prices: pd.DataFrame, vc: dict, dc: dict,
+                     cache_path: str = "data/vmd_modes.npy",
+                     meta_path: Optional[str] = None,
+                     debug_fast: bool = False) -> np.ndarray:
+    """Backward-compatible VMD-only wrapper around `build_decomposed_modes`
+    (method="vmd"). Every existing call site (`create_datasets`, the archived
+    Colab notebooks, etc.) keeps working byte-for-byte unchanged. See
+    `build_decomposed_modes` for the generalized (VMD/EMD/CEEMDAN) version
+    used by the new decomposition-comparison experiment.
+    """
+    return build_decomposed_modes(prices, vc, dc, cache_path=cache_path,
+                                   meta_path=meta_path, debug_fast=debug_fast,
+                                   method="vmd")
 
 
 class CopperDataset(Dataset):
@@ -554,13 +848,30 @@ class RawPriceDataset(Dataset):
         return torch.FloatTensor(x), torch.FloatTensor(y)
 
 
-def create_datasets(config: dict, debug_fast: bool = False) -> Dict:
-    """Orchestrate data download, VMD decomposition, and dataset creation.
+def create_datasets(config: dict, debug_fast: bool = False,
+                     decomposition_method: str = "vmd",
+                     modes_cache_path: Optional[str] = None) -> Dict:
+    """Orchestrate data download, decomposition, and dataset creation.
 
-    debug_fast: passed through to `build_vmd_modes`. Leave False (default)
-    for any real experiment/reported result -- it selects the leakage-safe,
-    true daily-refit rolling-window VMD (`VMDDecomposer`). Only set True for
-    quick, throwaway local debugging.
+    debug_fast: passed through to `build_decomposed_modes`. Leave False
+    (default) for any real experiment/reported result -- it selects the
+    leakage-safe, true daily-refit rolling-window VMD (`VMDDecomposer`).
+    Only set True for quick, throwaway local debugging. Ignored unless
+    decomposition_method=="vmd".
+
+    decomposition_method: "vmd" (default, unchanged behavior), "emd", or
+    "ceemdan" -- selects which decomposer `build_decomposed_modes` uses (see
+    item 2: alternative decomposition method comparison). config["vmd"]["K"]
+    is still the requested band/mode count for whichever method is chosen
+    (see EMDDecomposer/CEEMDANDecomposer docstrings for how K interacts with
+    a data-driven method's natural mode count).
+
+    modes_cache_path: override for the decomposed-modes cache path. Defaults
+    to "data/vmd_modes.npy" (unchanged) when None AND decomposition_method
+    == "vmd" (byte-for-byte backward compatible); for any other method, or
+    when explicitly given (e.g. by a K-sweep/decomposition-comparison driver
+    that needs one cache file per (method, K) combination so variants don't
+    invalidate each other's cache), this path is used instead.
     """
     dc = config["data"]
     vc = config["vmd"]
@@ -582,12 +893,16 @@ def create_datasets(config: dict, debug_fast: bool = False) -> Dict:
     val_idx = int((dates <= val_end).sum())
     logger.info(f"Split: train={train_idx}, val={val_idx-train_idx}, test={len(dates)-val_idx}")
 
-    # VMD decomposition: leakage-safe, true daily-refit rolling-window VMD
-    # by default (see VMDDecomposer / build_vmd_modes docstrings).
-    # debug_fast=True opts into the leaky full-series batch decomposer for
-    # quick iteration only -- never for reported results.
-    modes = build_vmd_modes(prices, vc, dc, cache_path="data/vmd_modes.npy",
-                             debug_fast=debug_fast)
+    # Decomposition: leakage-safe, true daily-refit rolling-window VMD by
+    # default (see VMDDecomposer / build_decomposed_modes docstrings).
+    # debug_fast=True opts into the leaky full-series batch VMD decomposer
+    # for quick iteration only -- never for reported results.
+    if modes_cache_path is None:
+        modes_cache_path = "data/vmd_modes.npy" if decomposition_method == "vmd" \
+            else f"data/{decomposition_method}_modes_K{vc['K']}.npy"
+    modes = build_decomposed_modes(prices, vc, dc, cache_path=modes_cache_path,
+                                    debug_fast=debug_fast,
+                                    method=decomposition_method)
 
     lookback = dc["lookback"]
     horizons = dc["horizons"]

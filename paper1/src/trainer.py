@@ -15,6 +15,19 @@ from .utils import (EarlyStopper, compute_metrics, diebold_mariano_test,
 
 logger = logging.getLogger(__name__)
 
+# Selectable training loss functions (item 3: alternative loss function
+# comparison). "mse" is the default and reproduces the exact, already-
+# verified pre-existing behavior (plain F.mse_loss, summed across horizons)
+# -- any config that does not set training.loss_fn, or sets it to "mse"
+# explicitly, is byte-for-byte unchanged from before this option existed.
+_LOSS_FNS = {
+    "mse": F.mse_loss,
+    "mae": F.l1_loss,
+    # beta=1.0 is torch's F.smooth_l1_loss default (equivalent to Huber's
+    # delta=1.0); kept explicit here so the choice is visible, not implicit.
+    "huber": lambda pred, target: F.smooth_l1_loss(pred, target, beta=1.0),
+}
+
 
 def _get_graph_type(model) -> str:
     """Detect a model's graph_type. VMDMFGNN itself doesn't store a
@@ -39,6 +52,20 @@ class VMDMFGNNTrainer:
         self.device = get_device()
         self.model.to(self.device)
         tc = config["training"]
+
+        # OFF by default in the sense that an absent key resolves to "mse",
+        # the pre-existing hardcoded behavior. Validated eagerly (not lazily
+        # inside train_epoch) so a typo'd config value fails fast at trainer
+        # construction instead of silently after a long training run.
+        loss_name = tc.get("loss_fn", "mse")
+        if loss_name not in _LOSS_FNS:
+            raise ValueError(
+                f"Unknown training.loss_fn={loss_name!r}; expected one of "
+                f"{sorted(_LOSS_FNS)}"
+            )
+        self.loss_fn_name = loss_name
+        self._loss_fn = _LOSS_FNS[loss_name]
+
         if tc.get("no_decay_graph_embeddings", False):
             # OFF by default. When enabled, excludes the graph embedding
             # parameters (FrequencyGraphConstructor's emb1/emb2, for every
@@ -166,7 +193,7 @@ class VMDMFGNNTrainer:
             x, y = x.to(self.device), y.to(self.device)
             self.optimizer.zero_grad()
             preds = self._forward(x)
-            loss = sum(F.mse_loss(preds[str(h)], y[:, i])
+            loss = sum(self._loss_fn(preds[str(h)], y[:, i])
                        for i, h in enumerate(self.model.horizons))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)

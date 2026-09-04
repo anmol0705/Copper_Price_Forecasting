@@ -1,6 +1,7 @@
 torch>=2.0
 torch-geometric>=2.4
 vmdpy>=0.2
+EMD-signal>=1.6  # PyEMD: EMD/CEEMDAN alternative-decomposition experiment (item 2)
 yfinance>=0.2.31
 pandas>=2.0
 numpy>=1.24

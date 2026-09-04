@@ -84,6 +84,56 @@ def diebold_mariano_test(e1: np.ndarray, e2: np.ndarray, horizon: int = 1) -> Di
     return {"dm_stat": dm_stat, "p_value": p_value}
 
 
+def paired_seed_significance_test(values_a: list, values_b: list) -> Dict[str, float]:
+    """Paired significance test across seeds (item 4: multi-seed robustness
+    check). H0: the two variants' per-seed metric values (e.g. RMSE at a
+    fixed horizon, one value per seed) come from the same distribution --
+    i.e. whichever variant looks better on average is not a stable ranking,
+    just seed noise.
+
+    Uses a paired t-test (scipy.stats.ttest_rel) as the primary test (matches
+    the paired-by-seed design: values_a[i] and values_b[i] are the same
+    seed's full_model vs. pooled_graph result). Also reports the Wilcoxon
+    signed-rank test as a distribution-free cross-check, since 5 seeds is a
+    very small sample for a t-test's normality assumption -- with n=5 the
+    Wilcoxon test's own asymptotic assumptions are weak too, so it is
+    reported as a supplementary signal, not the primary claim.
+
+    Returns: {"n": int, "mean_diff": float, "t_stat": float, "t_pvalue": float,
+              "wilcoxon_stat": float, "wilcoxon_pvalue": float}.
+    NaN fields indicate the test could not be computed (e.g. wilcoxon
+    requires nonzero differences; n=5 all-equal differences would return NaN
+    rather than crash).
+    """
+    a = np.asarray(values_a, dtype=float)
+    b = np.asarray(values_b, dtype=float)
+    if len(a) != len(b):
+        raise ValueError(f"values_a and values_b must be the same length (paired by seed), "
+                          f"got {len(a)} vs {len(b)}")
+    n = len(a)
+    diff = a - b
+    mean_diff = float(np.mean(diff))
+
+    if n < 2 or np.allclose(diff, diff[0]):
+        t_stat, t_pvalue = float("nan"), float("nan")
+    else:
+        t_res = stats.ttest_rel(a, b)
+        t_stat, t_pvalue = float(t_res.statistic), float(t_res.pvalue)
+
+    try:
+        w_res = stats.wilcoxon(a, b)
+        wilcoxon_stat, wilcoxon_pvalue = float(w_res.statistic), float(w_res.pvalue)
+    except ValueError:
+        # All-zero differences (identical values) -- wilcoxon is undefined.
+        wilcoxon_stat, wilcoxon_pvalue = float("nan"), float("nan")
+
+    return {
+        "n": n, "mean_diff": mean_diff,
+        "t_stat": t_stat, "t_pvalue": t_pvalue,
+        "wilcoxon_stat": wilcoxon_stat, "wilcoxon_pvalue": wilcoxon_pvalue,
+    }
+
+
 def save_results(results: dict, path: str):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
