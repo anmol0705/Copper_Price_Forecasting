@@ -8,6 +8,10 @@ paper2/data/cubench/raw/*.csv
 paper1/results/**/predictions/
 paper1/results/**/interpretability/
 paper1/results/**/checkpoints/
+paper1/latest_results/**/predictions/
+paper1/latest_results/**/checkpoints/
+paper1/Copper_Paper1/**/predictions/
+paper1/Copper_Paper1/**/checkpoints/
 paper1/results/**/figures/*.png
 paper2/results/**/predictions/
 paper2/results/**/interpretability/

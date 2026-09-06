@@ -1,0 +1,10 @@
+{
+  "hidden_dim": 128,
+  "num_heads": 8,
+  "learning_rate": 0.0027729368725238042,
+  "dropout": 0.09037188667490176,
+  "num_gnn_layers": 2,
+  "weight_decay": 0.00019987044642866448,
+  "K": 9,
+  "batch_size": 16
+}

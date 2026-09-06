@@ -1,0 +1,20 @@
+axis,value,verdict,n_ok,n_total,emb_grad_norm_mean,other_grad_norm_mean,mean_cosine_similarity_vs_init
+K,3,COLLAPSED -- all bands show the diagnosed pattern,0,3,3.87505152412166e-18,0.1556404135802266,0.7182441552480062
+K,5,COLLAPSED -- all bands show the diagnosed pattern,0,5,7.121039055134048e-16,0.15931692905078226,0.733011269569397
+K,7,COLLAPSED -- all bands show the diagnosed pattern,0,7,2.922025201330971e-10,0.18979364660135153,0.9266109125954765
+K,9,COLLAPSED -- all bands show the diagnosed pattern,0,9,8.551561821925284e-14,0.16091048820223147,0.8135894735654196
+decomposition_method,vmd,COLLAPSED -- all bands show the diagnosed pattern,0,5,3.7413110666855283e-14,0.12739327973273354,0.7939726352691651
+decomposition_method,emd,NOT COLLAPSED -- no band shows the diagnosed collapse-to-uniform pattern,5,5,2.3957147447803136e-08,0.28703319336477284,0.994338047504425
+loss_fn,mse,COLLAPSED -- all bands show the diagnosed pattern,0,5,3.508464985075137e-14,0.15232466768552066,0.793972623348236
+loss_fn,mae,COLLAPSED -- all bands show the diagnosed pattern,0,5,1.1723875313127824e-11,1.1355719254710879,0.8373473644256592
+loss_fn,huber,COLLAPSED -- all bands show the diagnosed pattern,0,5,0.0,0.06287638136855053,0.42030425667762755
+seed_x_variant,full_model_seed42,COLLAPSED -- all bands show the diagnosed pattern,0,5,2.5459436000325017e-15,0.16832235384074715,0.7526907444000244
+seed_x_variant,full_model_seed43,COLLAPSED -- all bands show the diagnosed pattern,0,5,6.248185215509314e-13,0.15067198909356888,0.8352422714233398
+seed_x_variant,full_model_seed44,NOT COLLAPSED -- no band shows the diagnosed collapse-to-uniform pattern,5,5,1.317533492032535e-08,0.19881463647687628,0.9828425288200379
+seed_x_variant,full_model_seed45,COLLAPSED -- all bands show the diagnosed pattern,0,5,2.683222048744847e-10,0.1855213660014606,0.925006115436554
+seed_x_variant,full_model_seed46,COLLAPSED -- all bands show the diagnosed pattern,0,5,8.741349935834567e-13,0.21904470766269526,0.8479454636573791
+seed_x_variant,pooled_graph_matched_dim_seed42,COLLAPSED -- all bands show the diagnosed pattern,0,1,8.886495286791526e-15,0.27507440748470324,0.8440676927566528
+seed_x_variant,pooled_graph_matched_dim_seed43,COLLAPSED -- all bands show the diagnosed pattern,0,1,3.745011472224543e-16,0.2629941570261928,0.8057944178581238
+seed_x_variant,pooled_graph_matched_dim_seed44,COLLAPSED -- all bands show the diagnosed pattern,0,1,1.9271744090710667e-20,0.17457294354043335,0.7156490087509155
+seed_x_variant,pooled_graph_matched_dim_seed45,NOT COLLAPSED -- no band shows the diagnosed collapse-to-uniform pattern,1,1,3.85098650462286e-08,0.2859692829618681,0.9811395406723022
+seed_x_variant,pooled_graph_matched_dim_seed46,COLLAPSED -- all bands show the diagnosed pattern,0,1,1.007234964559763e-17,0.1857890072945387,0.7156223654747009
