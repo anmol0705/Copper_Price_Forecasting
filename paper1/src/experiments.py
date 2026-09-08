@@ -426,7 +426,8 @@ def run_decomposition_comparison(base_config: dict,
                                   methods: List[str] = ("vmd", "emd"),
                                   hpo_best_params_path: str = "results/archive_paper1/hpo_best_params.json",
                                   results_dir: str = "results/robustness/decomposition",
-                                  on_cell_done=None) -> List[dict]:
+                                  on_cell_done=None,
+                                  diagnose_final_epoch: bool = False) -> List[dict]:
     """Retrains full model with each decomposition `method` (default: VMD
     vs EMD; pass methods=("vmd","emd","ceemdan") to include the optional,
     compute-expensive CEEMDAN variant -- see CEEMDANDecomposer's docstring
@@ -479,7 +480,8 @@ def run_decomposition_comparison(base_config: dict,
 
         test_metrics, diag, _ = _train_and_diagnose(
             ctor, ctor, tuned_config, data, ckpt_path, seed,
-            pred_dir=f"{results_dir}/predictions", pred_prefix=f"full_model_{method}")
+            pred_dir=f"{results_dir}/predictions", pred_prefix=f"full_model_{method}",
+            diagnose_final_epoch=diagnose_final_epoch)
         return {"method": method, "effective_K": data["num_modes"],
                 "test_metrics": test_metrics, "diagnostic": diag,
                 "checkpoint_path": ckpt_path}
@@ -557,7 +559,8 @@ def run_multiseed(base_config: dict,
                    variants: List[str] = ("full_model", "pooled_graph_matched_dim"),
                    hpo_best_params_path: str = "results/archive_paper1/hpo_best_params.json",
                    results_dir: str = "results/robustness/multiseed",
-                   on_cell_done=None) -> Dict:
+                   on_cell_done=None,
+                   diagnose_final_epoch: bool = False) -> Dict:
     """Re-runs ONLY full_model and pooled_graph_matched_dim (the two ablation
     rows carrying RQ1's central claim, per STATUS.md's already-recommended
     "middle path") across `seeds`, reporting mean +/- std per horizon plus a
@@ -619,7 +622,8 @@ def run_multiseed(base_config: dict,
         ctor = ctors[variant]
         test_metrics, diag, _ = _train_and_diagnose(
             ctor, ctor, tuned_config, data, ckpt_path, seed,
-            pred_dir=f"{results_dir}/predictions", pred_prefix=f"{variant}_seed{seed}")
+            pred_dir=f"{results_dir}/predictions", pred_prefix=f"{variant}_seed{seed}",
+            diagnose_final_epoch=diagnose_final_epoch)
         return {"variant": variant, "seed": seed, "test_metrics": test_metrics,
                 "diagnostic": diag, "checkpoint_path": ckpt_path}
 
