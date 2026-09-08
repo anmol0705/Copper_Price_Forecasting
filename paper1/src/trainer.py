@@ -363,6 +363,16 @@ class VMDMFGNNTrainer:
                 logger.info(f"Early stopping at epoch {epoch}")
                 break
 
+        # Always capture the state at the ACTUAL last epoch trained, separately
+        # from best_state (which may come from a much earlier epoch when
+        # early stopping fires quickly). This exists specifically so a
+        # diagnostic can be run on a genuinely-trained-through model even
+        # when best-val happened at epoch 0-2 -- see ROBUSTNESS_ANALYSIS_FINAL.md,
+        # "3 early-stopping-artifact cells". Cheap (one extra state_dict clone),
+        # always computed, never used unless a caller explicitly reads it.
+        self.final_state = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
+        self.final_epoch = last_epoch
+
         if best_state:
             self.model.load_state_dict(best_state)
             self.model.to(self.device)

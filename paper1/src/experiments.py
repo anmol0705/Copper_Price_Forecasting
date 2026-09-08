@@ -262,7 +262,9 @@ def _build_tuned_config(base_config: dict, best_params: dict) -> dict:
 
 def _train_and_diagnose(model_ctor, fresh_model_ctor, config: dict, data: Dict,
                          checkpoint_path: str, seed: int,
-                         pred_dir: Optional[str] = None, pred_prefix: str = "model"):
+                         pred_dir: Optional[str] = None, pred_prefix: str = "model",
+                         diagnose_final_epoch: bool = False,
+                         min_epochs_for_valid_diagnosis: int = 5):
     """Shared train-one-model-then-diagnose routine used by every experiment
     below. model_ctor()/fresh_model_ctor() are zero-arg callables returning a
     freshly-constructed (untrained) model -- fresh_model_ctor is called
@@ -306,10 +308,44 @@ def _train_and_diagnose(model_ctor, fresh_model_ctor, config: dict, data: Dict,
     device = get_device()
     fresh_model.to(device)
 
+    # trainer.model currently holds best_state (fit() reloads it before
+    # returning). best_state can come from a very early epoch when early
+    # stopping fires fast -- diagnosing THAT is not a meaningful test of
+    # whether the mechanism can learn, it's mostly measuring how little
+    # random-init noise has decayed. diagnose_final_epoch=True swaps in the
+    # actual-last-epoch weights (trainer.final_state, always captured by
+    # fit()) for the diagnostic only; test_metrics above were already
+    # computed against best_state and are left untouched either way.
+    final_epoch = getattr(trainer, "final_epoch", None)
+    used_final_epoch = False
+    # trainer.model holds best_state right now (fit() just reloaded it) --
+    # snapshot it before any swap so it can be restored after diagnosing.
+    best_state_snapshot = {k: v.cpu().clone() for k, v in trainer.model.state_dict().items()}
+    if diagnose_final_epoch and final_epoch is not None and final_epoch >= min_epochs_for_valid_diagnosis:
+        trainer.model.load_state_dict(trainer.final_state)
+        trainer.model.to(device)
+        used_final_epoch = True
+    elif diagnose_final_epoch:
+        logger.warning(
+            f"diagnose_final_epoch=True requested but final_epoch="
+            f"{final_epoch} < min_epochs_for_valid_diagnosis="
+            f"{min_epochs_for_valid_diagnosis}; diagnosing best_state as "
+            f"usual (there is no more-trained state to fall back to)."
+        )
+
     diag = run_full_diagnostic(
         trainer.model, fresh_model, data["val_loader"], device,
         num_vars=data["num_vars"], loss_fn=trainer._loss_fn,
     )
+    diag["diagnosed_final_epoch"] = used_final_epoch
+    diag["final_epoch"] = final_epoch
+
+    if used_final_epoch:
+        # Restore best_state so trainer.model / any caller inspecting it
+        # afterward still sees the model that produced test_metrics above.
+        trainer.model.load_state_dict(best_state_snapshot)
+        trainer.model.to(device)
+
     return test_metrics, diag, trainer
 
 
