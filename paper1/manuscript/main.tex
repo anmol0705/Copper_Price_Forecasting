@@ -11,6 +11,12 @@
 \usepackage{xcolor}
 \usepackage{subcaption}
 \usepackage{natbib}
+\usepackage{soul}
+
+% Yellow-highlighted, PDF-visible TODO marker. Every unresolved item in this
+% manuscript is wrapped in \todohl so it can be found by searching the compiled
+% PDF for highlighted text, not only by grepping for a LaTeX comment.
+\newcommand{\todohl}[1]{\hl{#1}}
 
 % TODO: intended submission venue is still to be decided by the authors.
 % (This file was originally formatted for Resources Policy under
@@ -34,6 +40,7 @@
 \IEEEauthorblockA{Department of Computer Science and Engineering\\
 National Institute of Technology Rourkela, Odisha, India\\
 % TODO: add corresponding author email
+\colorbox{yellow}{[TODO: corresponding author email address still to be added]}
 }}
 
 \IEEEtitleabstractindextext{%
@@ -48,6 +55,11 @@ copper price forecasting, graph neural networks, variational mode decomposition,
 \maketitle
 \IEEEdisplaynontitleabstractindextext
 \IEEEpeerreviewmaketitle
+
+\noindent\todohl{[TODO: target submission venue is not yet decided. This
+manuscript is currently formatted in IEEEtran two-column journal style; it was
+originally drafted for Resources Policy under elsarticle. Re-confirm the target
+venue's citation, formatting and length requirements before submission.]}
 
 %% ============================================================
 \section{Introduction}
@@ -237,7 +249,7 @@ VMD-MFGNN, the proposed model, is tuned via a lightweight Optuna study (TPE samp
 \subsection{Ablation Studies}
 \label{sec:ablation}
 
-Six variants isolate the contribution of each architectural component, all trained at the untuned default configuration (Section~\ref{sec:impl}, Section~\ref{sec:complexity})---HPO (Section~\ref{sec:hpo}) is applied only to the main-table VMD-MFGNN, never to any ablation variant. Because this study uses a single chronological split rather than multiple walk-forward folds or multiple random seeds (Section~\ref{sec:limitations}), the ablation results below are reported as point estimates per horizon, without a paired significance test; a valid resampling unit (folds or seeds) does not exist under the current protocol to compute one.
+Six variants isolate the contribution of each architectural component, all trained at the untuned default configuration (Section~\ref{sec:impl}, Section~\ref{sec:complexity})---HPO (Section~\ref{sec:hpo}) is applied only to the main-table VMD-MFGNN, never to any ablation variant. Because this study uses a single chronological split rather than multiple walk-forward folds or multiple random seeds (Section~\ref{sec:limitations}), the ablation results below are reported as point estimates per horizon, without a paired significance test; a valid resampling unit (folds or seeds) does not exist for \emph{this} run to compute one. A separate five-seed repetition of the two variants that carry RQ1, run later at the tuned configuration and therefore not directly comparable to this table, does admit a paired test and is reported in Section~\ref{sec:robustness}.
 
 \begin{itemize}
     \item \textbf{(a) Full model}: VMD decomposition into $K=5$ bands, with a separate learned graph per band, at the untuned default configuration (393{,}476 parameters). This is a distinct trained instance from the HPO-tuned VMD-MFGNN reported in Table~\ref{tab:main} (1{,}461{,}124 parameters); see Section~\ref{sec:complexity}.
@@ -248,7 +260,7 @@ Six variants isolate the contribution of each architectural component, all train
 
 \subsection{Statistical Testing}
 
-For the baseline comparison (VMD-MFGNN versus each of the six baselines, Section~\ref{sec:baselines}), we apply the Diebold-Mariano test \citep{DieboldMariano1995} to each pair of forecast error series, per horizon, testing whether VMD-MFGNN's forecast errors are significantly different from each baseline's. This test is applicable here because the same test-set forecasts, produced under the same single split, provide a valid paired sample of loss differentials over time. The test statistic is computed on the loss differential $d = e_{\text{VMD-MFGNN}}^2 - e_{\text{baseline}}^2$, divided by the square root of a heteroskedasticity-and-autocorrelation-consistent (HAC) variance estimate that sums $d$'s sample autocovariances at lags $1,\ldots,\text{horizon}-1$ with equal (rectangular-kernel) weight; this is a simpler, unweighted HAC-style correction, not the Bartlett-weighted kernel of the classical Newey-West estimator, and we describe it as such here to match the implementation exactly rather than name it Newey-West. Consequently a \emph{negative} DM statistic indicates VMD-MFGNN's squared error was lower (VMD-MFGNN better) and a \emph{positive} DM statistic indicates the baseline's squared error was lower (baseline better), and this sign convention is used without repeating it per cell in Table~\ref{tab:dm}. Because 24 DM tests are run (six baselines $\times$ four horizons), we additionally apply the Holm-Bonferroni step-down procedure to control the family-wise error rate across all 24 tests at $\alpha=0.05$, and report both the raw and Holm-corrected significance in Table~\ref{tab:dm} (Section~\ref{sec:results-dm}). The DM test is \emph{not} applied to the ablation comparisons (Section~\ref{sec:ablation}): with only one train/validation/test split and no walk-forward folds or repeated seeds, there is no resampling unit across which to compute a paired test or an effect size such as Cohen's $d$ for the ablation variants, and we do not fabricate one.
+For the baseline comparison (VMD-MFGNN versus each of the six baselines, Section~\ref{sec:baselines}), we apply the Diebold-Mariano test \citep{DieboldMariano1995} to each pair of forecast error series, per horizon, testing whether VMD-MFGNN's forecast errors are significantly different from each baseline's. This test is applicable here because the same test-set forecasts, produced under the same single split, provide a valid paired sample of loss differentials over time. The test statistic is computed on the loss differential $d = e_{\text{VMD-MFGNN}}^2 - e_{\text{baseline}}^2$, divided by the square root of a heteroskedasticity-and-autocorrelation-consistent (HAC) variance estimate that sums $d$'s sample autocovariances at lags $1,\ldots,\text{horizon}-1$ with equal (rectangular-kernel) weight; this is a simpler, unweighted HAC-style correction, not the Bartlett-weighted kernel of the classical Newey-West estimator, and we describe it as such here to match the implementation exactly rather than name it Newey-West. Consequently a \emph{negative} DM statistic indicates VMD-MFGNN's squared error was lower (VMD-MFGNN better) and a \emph{positive} DM statistic indicates the baseline's squared error was lower (baseline better), and this sign convention is used without repeating it per cell in Table~\ref{tab:dm}. Because 24 DM tests are run (six baselines $\times$ four horizons), we additionally apply the Holm-Bonferroni step-down procedure to control the family-wise error rate across all 24 tests at $\alpha=0.05$, and report both the raw and Holm-corrected significance in Table~\ref{tab:dm} (Section~\ref{sec:results-dm}). The DM test is \emph{not} applied to the ablation comparisons (Section~\ref{sec:ablation}): with only one train/validation/test split and no walk-forward folds or repeated seeds in that run, there is no resampling unit across which to compute a paired test or an effect size such as Cohen's $d$ for the ablation variants as reported in Table~\ref{tab:ablation}, and we do not fabricate one. Where seeds \emph{are} available --- the five-seed repetition of the two RQ1 variants at the tuned configuration, Section~\ref{sec:robustness} --- we do report paired $t$- and Wilcoxon signed-rank tests over seeds, but that is a separate experiment at a different configuration and its tests do not transfer to Table~\ref{tab:ablation}.
 
 \subsection{Evaluation Metrics}
 
@@ -459,6 +471,212 @@ One caveat applies specifically to \texttt{full\_model\_graphfix}'s own per-hori
 
 We read this as strengthening, not weakening, the paper's account of the collapse: we diagnosed a specific mechanism, engineered a fix targeted precisely at that mechanism, confirmed the fix resolves the mechanism it was designed to resolve, and found that the architecture still fails to learn differentiated graph structure for a deeper, independently confirmed reason. A negative result that survives its own proposed remedy is more informative than one that was never tested against a remedy at all, and it sharpens the claim in Section~\ref{sec:collapse} from ``weight decay probably caused this'' to ``removing weight decay's pull does not fix it, because there was never enough task gradient here to learn from regardless.''
 
+\subsection{Robustness Checks: Is the Collapse an Artifact of Our Configuration Choices?}
+\label{sec:robustness}
+
+\noindent\todohl{[TODO --- provisional numbers. The decomposition-method and
+multi-seed results reported below rest on best-validation checkpoints for three
+cells (the EMD arm, the per-band seed-44 run, and the pooled seed-45 run) that
+early-stopped after only one to two real training epochs. A corrected
+re-diagnosis of those three cells from final-epoch rather than best-validation
+weights, using the new diagnose\_final\_epoch code path, is in progress; it will
+replace every highlighted value in this subsection. See
+results/robustness/*\_finalepoch\_fix/. Each affected number below carries its
+own highlighted marker.]}
+
+Section~\ref{sec:collapse}'s adjacency-collapse diagnosis and
+Section~\ref{sec:graphfix}'s failed remedy were both established at a single
+configuration: $K=5$ bands, VMD decomposition, MSE training loss, seed 42, and
+one set of tuned hyperparameters. A reader is entitled to ask whether the finding
+is a property of the architecture or an artifact of that particular corner of the
+configuration space. We therefore ran five robustness experiments --- a
+band-count sweep ($K \in \{3,5,7,9\}$), a decomposition-method comparison (VMD
+versus EMD), a training-loss comparison, a five-seed repetition of the two
+ablation variants carrying RQ1, and a substantially wider hyperparameter search
+--- applying the \emph{same} three-part gradient/adjacency diagnostic (embedding
+RMS relative to initialization, gradient norm reaching
+$\mathbf{E}^{(1)}_k/\mathbf{E}^{(2)}_k$, and cosine similarity against the run's
+own random initialization) to every one of the 19 trained cells. All 19 cells
+were trained at the tuned configuration of Section~\ref{sec:hpo} with weight
+decay $10^{-5}$, and all 19 completed. Two of the five experiments carry defects
+we disclose in full below rather than repair, for reasons we state; a third
+defect, affecting three individual cells, is the subject of the pending
+re-diagnosis flagged above.
+
+\textbf{The collapse is invariant to every axis we varied, and is explained almost
+entirely by one variable we did not intend to vary.} Across all 19 cells, the
+trained graph embeddings' cosine similarity to their own random initialization is
+predicted by the number of epochs of training embodied in the saved checkpoint,
+with Spearman $\rho = -0.990$ ($p = 7.5\times10^{-16}$); the embeddings' RMS
+magnitude relative to initialization gives $\rho = -0.993$ ($p =
+3.4\times10^{-17}$), and the gradient norm reaching them gives $\rho = -0.961$
+($p = 6.8\times10^{-11}$). A linear fit in training epochs explains 97.7\% of the
+variance in cosine-to-initialization, and the residuals from that fit show no
+detectable dependence on which experiment produced the cell (one-way ANOVA across
+the four axes: $F = 0.543$, $p = 0.660$; Kruskal--Wallis $p = 0.638$; largest
+absolute residual 0.043 against a full observed range of 0.420--0.994). Relative
+embedding magnitude falls from 82\% of its initialization value in the
+least-trained cell (one epoch) to $9\times10^{-8}$ of it in the most-trained
+(37 epochs; an absolute embedding RMS of $1.5\times10^{-8}$ against a Xavier
+reference of 0.2885). Put plainly: once one knows how long a checkpoint trained,
+knowing whether it used three bands or nine, VMD or EMD, MSE or MAE, or which of
+five seeds, adds essentially nothing. This is the signature of a process driven by
+the optimizer rather than by the task, consistent with Section~\ref{sec:graphfix}'s
+finding that removing weight decay's pull does not substitute a learning signal
+for it. \todohl{[TODO: these four statistics are computed over all 19 cells,
+including the three pending ones, which supply the entire low-epoch end of the
+regression. Recompute the correlations, the fit and the endpoint after the
+final-epoch re-diagnosis lands.]}
+
+\textbf{An early-stopping artifact, and why we report it rather than the verdict
+it produces.} Three of the 19 cells --- the EMD arm, one seed of the per-band
+variant, and one seed of the pooled variant --- are flagged \texttt{NOT
+COLLAPSED} by the automated diagnostic. They are not counterexamples. Our trainer
+saves the best-validation weights but stamps them with the loop's final epoch
+index; because the best-validation save condition and the early stopper's
+improvement condition are the same predicate (a strict improvement on the running
+best, with zero tolerance), and every one of the 19 runs early-stopped well inside
+the 200-epoch budget, the weights actually in a checkpoint are exactly those from
+epoch $(\text{recorded epoch} - 20)$ under the patience of 20 used throughout. For
+these three cells the recorded indices are 0, 1 and 1, and since a full training
+pass precedes each evaluation, their saved weights reflect one to two epochs of
+training against five to thirty-seven in every other cell. They retain 65--82\% of
+their initialization norm, where every other cell retains at most 33\%, falling to
+0.7\% and, in the degenerate Huber arm discussed below, to order $10^{-7}$. They
+have moved, in the same direction as everything else, simply not yet far enough to
+cross the diagnostic's threshold. This is the same artifact we already document
+for \texttt{full\_model\_graphfix} in Section~\ref{sec:graphfix}, recurring here
+in three further cells; we report it because a summary table carrying these
+verdicts without training length would invite the false conclusion that EMD, or a
+particular seed, protects against the collapse.
+
+Restricting attention to the 16 cells that trained beyond this margin, the
+collapse is observed in \textbf{16 of 16}: at all four band counts, in all three
+loss arms, and at four of the five seeds in each of the two graph variants (a
+different seed is excluded in each). The decomposition axis is the one exception,
+and we state it plainly rather than fold it into the count: EMD contributes only
+a single cell to this suite and that cell is one of the three artifacts, so
+\emph{this suite currently carries no usable evidence about EMD at all}, and the
+VMD-versus-EMD comparison is not yet answered in either direction.
+\todohl{[TODO: once the three cells are re-diagnosed from final-epoch weights,
+restate this coverage claim. If all three collapse, it becomes 19 of 19, both
+decomposition methods and all five seeds in both variants, and this paragraph's
+EMD caveat is withdrawn. If any does not, that is a genuine counterexample and
+must be reported as one.]}
+
+\textbf{Accuracy differences across these axes are smaller than run-to-run noise.}
+Four of the 19 cells are, by construction, the identical configuration ($K=5$,
+VMD, MSE, seed 42) reached through four different experiment drivers, and we
+verified their held-out ground-truth arrays are bit-identical. Their test average
+MSE nonetheless spans 7.54\% (0.002772--0.002981), which we take as this study's
+honest run-to-run noise floor at fixed configuration and fixed seed. Every axis
+effect we measured is smaller or comparable: the band-count sweep spans 8.1\%
+(0.002757--0.002981), the loss comparison 9.4\% (0.002691--0.002943), and the
+five-seed repetition of the per-band model has a coefficient of variation of
+1.32\% and a best-to-worst spread of 3.1\%. We therefore report no accuracy
+ranking over $K$, decomposition method or loss; none is resolvable at $n=1$ per
+cell. These four replicates also serve as a within-experiment check on the
+paragraph above: they embody 14, 11, 11 and 13 epochs of training and record
+cosine-to-initialization of 0.733, 0.794, 0.794 and 0.753, tracking training
+duration with configuration \emph{and} seed both held fixed --- which also shows
+that run-to-run nondeterminism perturbs the epoch count itself, and is why the
+configuration labels carry no residual information once training length is known.
+
+\textbf{The five-seed RQ1 check, and its capacity caveat.} Repeating the two
+ablation variants that carry RQ1 across seeds 42--46 at the tuned configuration,
+the per-band model's test RMSE is statistically indistinguishable from the pooled
+variant's at every horizon (paired $t$-test over the five seeds: $p = 0.96$,
+$0.13$, $0.88$, $0.50$ at $h = 1, 5, 10, 22$; Wilcoxon signed-rank likewise
+non-significant throughout). \emph{This comparison is not capacity-matched.} It
+re-ran \texttt{pooled\_graph\_matched\_dim}, which we confirm by direct parameter
+counting from the saved checkpoints carries 315{,}530 parameters against the
+per-band model's 1{,}461{,}124 --- a 78.4\% deficit --- rather than the
+parameter-matched variant the RQ1 comparison calls for. That 78.4\% figure is
+\emph{not} the same measurement as the 78.5\% reported in
+Section~\ref{sec:complexity}: the latter is a different model pair, at the untuned
+default configuration (hidden dimension 64), and the two land 0.1 percentage
+points apart by coincidence. We report the comparison anyway, in the conservative
+direction it happens to run: a per-band model with $4.6\times$ the parameters does
+not significantly beat a much smaller pooled model at any horizon across five
+seeds. This strengthens rather than weakens Section~\ref{sec:discussion}'s
+negative answer to RQ1, and we note that the parameter-matched version of this
+comparison is one this paper retracts on independent grounds in
+Section~\ref{sec:constantforecast}, so there is no live claim here that the
+capacity mismatch could undermine. \todohl{[TODO: two of the ten multi-seed
+cells (per-band seed 44, pooled seed 45) are among the three pending
+re-diagnoses. Their accuracy metrics and the paired tests above are unaffected,
+but their collapse verdicts are, and the per-seed collapse coverage stated above
+will need updating.]}
+
+\textbf{The loss comparison tested two losses, not three.} We configured MSE, MAE
+and Huber arms. The Huber arm used PyTorch's \texttt{smooth\_l1\_loss} at its
+default $\beta = 1.0$, which is quadratic --- exactly $\tfrac{1}{2}x^2$ --- for
+residuals below 1.0. The largest absolute residual observed anywhere in this
+experiment, across all three arms and all four horizons, is 0.284, i.e.\ 28.4\% of
+$\beta$; the loss therefore never once entered its linear branch, and the Huber
+arm is mathematically identical to $\tfrac{1}{2}\times$MSE. We report it as a
+two-loss comparison and do not claim a three-way result. The arm is not
+uninformative, however: because Adam's coupled $L_2$ decay does not scale with the
+loss, halving the task gradient while leaving the decay pull intact doubles the
+decay's relative influence, and this arm consequently trained longest (37 epochs
+of retained weights, against 11 for the MSE arm) and collapsed hardest,
+terminating with embedding RMS of $1.5\times10^{-8}$ against a Xavier reference of
+0.2885, a bit-exactly uniform adjacency (softmax standard deviation of exactly
+zero at band 0), and a gradient reaching the embeddings of \emph{exactly} zero. An
+unintended loss-scale ablation thus independently corroborates the weight-decay
+mechanism argued for in Sections~\ref{sec:collapse} and~\ref{sec:graphfix}.
+
+\textbf{A wider hyperparameter search does not rescue the model, and confirms the
+original search was adequate.} The study reported in Section~\ref{sec:hpo}
+searched five parameters over 10 trials at fixed $K=5$, batch size 32 and weight
+decay $10^{-5}$. We re-ran a study three times larger and with three additional
+dimensions --- $K \in \{3,5,7,9\}$, weight decay (log-uniform, $10^{-6}$ to
+$10^{-3}$) and batch size $\in \{16,32,64\}$ --- for 30 trials under an identical
+objective (best validation average MSE over 25 epochs). Twelve trials completed
+and 18 were pruned. The best configuration found (hidden dimension 128, 8 heads,
+learning rate $\approx 0.00277$, dropout $\approx 0.0904$, 2 GNN layers, weight
+decay $\approx 2.0\times10^{-4}$, batch size 16, $K=9$) attains validation MSE
+0.0020145 against the deployed configuration's 0.0020509 --- an improvement of
+\textbf{1.78\%}, with only 2 of the 12 completed trials beating the deployed value
+at all, and the second-best tying it to four significant figures. That margin is
+smaller than this study's 3.1\% across-seed spread and far smaller than its 7.54\%
+same-configuration replicate spread, and part of it is attributable to optimizer
+step count rather than configuration quality, since the winning trial halves the
+batch size within a fixed epoch budget. We therefore report the wider search as a
+confirmatory negative: the original five-parameter, ten-trial configuration was
+already effectively optimal for this objective, and we do not re-run the main
+results at the new one. Three caveats attach. First, all 18 pruned trials were
+pruned after a single epoch, the median pruner having been constructed without
+warmup steps, so 60\% of the search budget was screened on one epoch of validation
+loss, which structurally favors the high-learning-rate, small-batch region the
+survivors occupy. Second, the sampler concentrated on $K=9$ (8 of the 12 completed
+trials), and batch size is fully aliased with $K$ in the completed set, so the
+per-parameter marginals and importances are confounded and we do not interpret
+them; independently, the band-count sweep's converged test results do not
+reproduce the search's implied $K$ ordering, and span less than the noise floor.
+Third, and most consequential for this paper's argument, \textbf{the search
+objective is structurally blind to the collapse}: it scores validation MSE and
+nothing else, and in our 19 diagnosed cells the near-initialization checkpoints
+score squarely mid-range among the collapsed ones (training length correlates with
+test average MSE at only $\rho = 0.456$, $p = 0.05$). Collapse is essentially free
+under this objective, so no widening of the search space could select against it.
+We did not capture embedding diagnostics for individual search trials and
+therefore cannot state directly whether the collapse persists at the wider
+optimum; we note only, as inference from the established mechanism rather than as
+measurement, that the selected configuration's weight decay is 20 times the value
+used everywhere else in this paper, which points toward more severe collapse
+rather than less.
+
+Taken together, these checks close the most obvious escape route from
+Sections~\ref{sec:collapse} and~\ref{sec:graphfix}'s negative findings. The
+collapse is not a property of $K=5$, of the squared-error loss, of a single seed,
+or of an insufficiently searched hyperparameter space; whether it is a property of
+VMD specifically remains open pending the re-diagnosis flagged above, since the
+EMD arm is the one cell this suite cannot currently speak to. What the 16 usable
+cells show is that the collapse is a property of what happens to these embeddings
+under the optimizer once training proceeds past its first epoch, and that it does
+not depend on any modeling choice we were able to vary.
+
 \subsection{The Constant-Forecast Artifact: Why Directional Accuracy Needs a Dispersion Check}
 \label{sec:constantforecast}
 
@@ -475,7 +693,7 @@ We report this as a general methodological finding, not only a correction specif
 
 \textbf{RQ0 (does any of this beat doing nothing?), asked first because it conditions how RQ1--RQ3 should be read.} No. Table~\ref{tab:main} shows the naive zero-forecast baseline wins MAE at all four horizons against all seven fitted models, and RMSE at two of four; every model's $R^2$ is negative or near zero. This is the most important finding of this study and the reason RQ1--RQ3 below should be read as differences \emph{among} approaches that do not clearly explain copper return variance, not as evidence that any of them, including VMD-MFGNN, has found exploitable signal.
 
-\textbf{RQ1 (per-band versus pooled graph).} Not supported, now explained mechanistically (Section~\ref{sec:collapse}, Section~\ref{sec:graphfix}) and checked for a directional-accuracy artifact that could otherwise have overturned this answer (Section~\ref{sec:constantforecast}). Section~\ref{sec:ablation-results}'s precise reading of Table~\ref{tab:ablation} is that the per-band full model never attains the best-of-six value in any column, and loses directional accuracy to both pooled-graph variants at three of the four horizons ($h=1,5,10$) --- its one DA win over a pooled variant coming at $h=22$ against \texttt{pooled\_graph\_matched\_dim} only, a variant carrying 78.5\% fewer parameters --- while trading RMSE/MAE wins back and forth with them at individual horizons. Given the adjacency-collapse diagnosis in Section~\ref{sec:collapse} --- every per-band adjacency matrix converged to $\approx 1/N$ uniform weights, with two independently trained models sharing the same collapsed, undifferentiated embedding direction --- this negative ablation result is not a surprising or mysterious finding about graph topology; it is close to the expected outcome once the per-band mechanism carries almost no differentiated information to begin with. We therefore answer RQ1 in the negative for a stronger, more specific reason than ``the ablation numbers came out this way'': the per-band graph mechanism, as trained here, did not learn the kind of structure that could produce a per-band advantage, so its absence in the ablation table is consistent with, not contradictory to, the mechanistic finding. A tuned re-check (Section~\ref{sec:confound-tuned}) initially appeared to overturn this answer, with the per-band model beating the pooled variant on directional accuracy at three of four horizons; we traced that apparent reversal to the pooled variant emitting a near-constant, near-zero-variance forecast whose directional accuracy exactly reproduces the test period's class frequency rather than measuring real skill (Section~\ref{sec:constantforecast}), and we explicitly retract the reversal rather than let it stand as a competing answer to RQ1. We engineered and tested a targeted fix for the adjacency collapse itself (Section~\ref{sec:graphfix}): it mechanically resolves the collapse (embedding norm is preserved) but the embeddings still fail to move meaningfully from random initialization under the task gradient available to them, so RQ1's negative answer holds under every configuration and every diagnostic check we applied, not only the original untuned ablation.
+\textbf{RQ1 (per-band versus pooled graph).} Not supported, now explained mechanistically (Section~\ref{sec:collapse}, Section~\ref{sec:graphfix}) and checked for a directional-accuracy artifact that could otherwise have overturned this answer (Section~\ref{sec:constantforecast}). Section~\ref{sec:ablation-results}'s precise reading of Table~\ref{tab:ablation} is that the per-band full model never attains the best-of-six value in any column, and loses directional accuracy to both pooled-graph variants at three of the four horizons ($h=1,5,10$) --- its one DA win over a pooled variant coming at $h=22$ against \texttt{pooled\_graph\_matched\_dim} only, a variant carrying 78.5\% fewer parameters --- while trading RMSE/MAE wins back and forth with them at individual horizons. Given the adjacency-collapse diagnosis in Section~\ref{sec:collapse} --- every per-band adjacency matrix converged to $\approx 1/N$ uniform weights, with two independently trained models sharing the same collapsed, undifferentiated embedding direction --- this negative ablation result is not a surprising or mysterious finding about graph topology; it is close to the expected outcome once the per-band mechanism carries almost no differentiated information to begin with. We therefore answer RQ1 in the negative for a stronger, more specific reason than ``the ablation numbers came out this way'': the per-band graph mechanism, as trained here, did not learn the kind of structure that could produce a per-band advantage, so its absence in the ablation table is consistent with, not contradictory to, the mechanistic finding. A tuned re-check (Section~\ref{sec:confound-tuned}) initially appeared to overturn this answer, with the per-band model beating the pooled variant on directional accuracy at three of four horizons; we traced that apparent reversal to the pooled variant emitting a near-constant, near-zero-variance forecast whose directional accuracy exactly reproduces the test period's class frequency rather than measuring real skill (Section~\ref{sec:constantforecast}), and we explicitly retract the reversal rather than let it stand as a competing answer to RQ1. We engineered and tested a targeted fix for the adjacency collapse itself (Section~\ref{sec:graphfix}): it mechanically resolves the collapse (embedding norm is preserved) but the embeddings still fail to move meaningfully from random initialization under the task gradient available to them, so RQ1's negative answer holds under every configuration and every diagnostic check we applied, not only the original untuned ablation. Section~\ref{sec:robustness} extends that statement across four further axes: the collapse recurs at every band count, in every loss arm, and at every seed of both graph variants that trained beyond a first epoch, and a three-times-wider hyperparameter search neither improves the model meaningfully nor could select against the collapse, since its objective is validation error alone. A five-seed repetition of the two RQ1 variants at tuned hyperparameters likewise finds no significant per-band advantage at any horizon, in a comparison whose capacity mismatch runs in the conservative direction.
 
 \textbf{RQ2 (per-band graph versus no-VMD and versus a fixed correlation graph).} Also not cleanly supported. Against the no-VMD, matched-params variant, the full model loses on RMSE and MAE at $h=1$ (the no-VMD variant achieves the best RMSE/MAE of all six ablation variants at that horizon) while winning at $h=22$ on RMSE only (the DA-at-$h=22$ ``worst of six'' claim for that variant does not hold, Section~\ref{sec:ablation-results}); the picture is mixed rather than a decomposition advantage at every horizon. Against the correlation-graph variant, which isolates learned versus fixed adjacency while holding the per-band architecture fixed, the correlation graph wins the best RMSE of all six variants at $h=22$ and is close to or better than the full model at most other horizon/metric combinations --- itself a natural consequence of the collapse finding: a fixed correlation graph is, almost by construction, no worse a source of relational structure than a learned graph that failed to learn any. We answer RQ2 in the negative as well: neither the contribution of VMD decomposition nor the contribution of end-to-end learned (versus fixed correlation-based) adjacency is cleanly demonstrated by these ablations.
 
@@ -502,13 +720,14 @@ We enumerate the limitations of this study's design explicitly, rather than defe
     \item \textbf{No purge or embargo at split boundaries.} The train/validation/test split boundaries (Section~\ref{sec:experiments}) are simple calendar cutoffs; samples whose $h$-day-ahead target crosses a split boundary (up to $h=22$ trading days) are not purged or embargoed from the adjacent split, a standard precaution in some financial ML protocols that this study does not implement. Given the small size of any single leakage window relative to each split's multi-year length, we judge the practical impact to be small, but do not claim it is zero.
     \item \textbf{Non-stationary price-level inputs and covariate shift.} Several baselines and the no-VMD ablation variant (Section~\ref{sec:ablation}) consume price-level (not VMD-decomposed) inputs, standardized using statistics computed on the 2010--2019 training period. Copper and several of the other seven input series moved well outside their 2010--2019 range by the 2022--2025 test period, so these models face meaningful covariate shift at test time that a return-based or rolling-normalized input representation would reduce; this was not corrected within this project's timeline.
     \item \textbf{Continuous-futures roll-gap contamination.} Several input series (notably crude oil, which recorded a well-known negative-price episode in April 2020, inside this study's validation period) are continuous futures series that can contain roll-related price discontinuities not present in the underlying economics. No explicit roll-gap screening or outlier capping was applied to any input series.
-    \item \textbf{Single chronological split; no walk-forward evaluation.} All results are computed on one train (2010--2019) / validation (2020--2021) / test (2022--2025) split, not a walk-forward or rolling-origin design with multiple folds. This limits the results to a single realization of test-period market conditions, and, combined with the absence of multiple seeds, means there is no resampling unit available to compute a paired significance test or effect size (e.g., Cohen's $d$) for the ablation comparisons (Table~\ref{tab:ablation}); only the baseline comparison (Table~\ref{tab:dm}) admits a valid Diebold-Mariano test, because it compares two forecast-error series over the same single test period rather than requiring resampling across folds or seeds.
-    \item \textbf{Asymmetric hyperparameter optimization, and fewer trials than configured.} VMD-MFGNN's HPO search (Section~\ref{sec:hpo}) was configured for up to 15 Optuna trials but, in the run reported here, completed only 10 (5 \texttt{COMPLETE}, 5 \texttt{PRUNED}) before the search budget was exhausted; the reported best configuration is the best of those 10, not necessarily the best of a full 15-trial search. The six baselines receive no HPO at all and run at standard, hand-set configurations. Both facts are deliberate, disclosed choices/outcomes made to fit the project's compute and time budget, not oversights, but they mean the baseline comparison (Table~\ref{tab:main}, Table~\ref{tab:dm}) compares a tuned model, tuned over fewer trials than originally configured, against six untuned ones, and any accuracy gap is not solely attributable to architecture.
+    \item \textbf{Single chronological split; no walk-forward evaluation.} All results are computed on one train (2010--2019) / validation (2020--2021) / test (2022--2025) split, not a walk-forward or rolling-origin design with multiple folds. This limits the results to a single realization of test-period market conditions, and, combined with the absence of multiple seeds in that run, means there is no resampling unit available to compute a paired significance test or effect size (e.g., Cohen's $d$) for the ablation comparisons (Table~\ref{tab:ablation}); only the baseline comparison (Table~\ref{tab:dm}) admits a valid Diebold-Mariano test, because it compares two forecast-error series over the same single test period rather than requiring resampling across folds or seeds. The five-seed repetition reported in Section~\ref{sec:robustness} supplies a seed-level resampling unit for the two RQ1 variants specifically, at the tuned configuration, but it is still a single chronological split; it does not address the fold-level limitation described here, and no walk-forward evaluation is performed anywhere in this paper.
+    \item \textbf{Asymmetric hyperparameter optimization, and fewer trials than configured.} VMD-MFGNN's HPO search (Section~\ref{sec:hpo}) was configured for up to 15 Optuna trials but, in the run reported here, completed only 10 (5 \texttt{COMPLETE}, 5 \texttt{PRUNED}) before the search budget was exhausted; the reported best configuration is the best of those 10, not necessarily the best of a full 15-trial search. The six baselines receive no HPO at all and run at standard, hand-set configurations. Both facts are deliberate, disclosed choices/outcomes made to fit the project's compute and time budget, not oversights, but they mean the baseline comparison (Table~\ref{tab:main}, Table~\ref{tab:dm}) compares a tuned model, tuned over fewer trials than originally configured, against six untuned ones, and any accuracy gap is not solely attributable to architecture. On the first of these two points specifically, a later, substantially wider search --- 30 trials over eight parameters, adding $K$, weight decay and batch size --- found no meaningful improvement over the reported configuration (1.78\% in validation MSE, inside this study's own replicate noise floor), which we report in Section~\ref{sec:robustness} as evidence that the truncated original search was not the binding constraint. It does not address the second point: the six baselines remain untuned.
     \item \textbf{Ablation results do not transfer directly to the HPO-tuned model, and do not support the paper's central claim at the configuration tested.} All six ablation variants (Section~\ref{sec:ablation}), including the ablation study's own \texttt{full\_model} row, are trained at the untuned default configuration (393{,}476 parameters), a different and much smaller trained instance than the HPO-tuned VMD-MFGNN reported in the main comparison (1{,}461{,}124 parameters, Section~\ref{sec:complexity}). Capacity matching for the no-VMD and pooled-graph variants worked well in absolute terms (matched-parameter variants land within about 1\% of the full model's parameter count), which resolves the raw capacity-confound concern that motivated building two capacity settings per variant; both the matched-dimension and matched-parameter settings are reported at genuinely matched capacity, and no ablation row should be read as carrying a residual, unaddressed capacity confound relative to the others. Resolving the capacity confound did not, however, resolve the substantive architectural question it was meant to isolate: even with capacity approximately matched, the per-band full model never attains the best-of-six value in any RMSE/MAE/DA column in Table~\ref{tab:ablation}, and the capacity-matched pooled-graph variant beats it on directional accuracy at three of the four horizons ($h=1,5,10$), the fourth ($h=22$) being a confirmed base-rate artifact we do not count in either direction (Section~\ref{sec:ablation-results}, Section~\ref{sec:constantforecast}). This is reported as a substantive limitation on the paper's central architectural premise, not merely a methodological caveat to be read past, and Section~\ref{sec:discussion} argues it is the expected consequence, not a separate puzzle, given the adjacency-collapse finding below.
     \item \textbf{The learned per-band adjacency collapsed to near-uniform edge weights; the interpretability evidence supports no claim of learned relational structure, and this persists after a targeted fix.} Direct inspection of trained checkpoints (Section~\ref{sec:collapse}) shows every kept edge weight in every one of the five VMD frequency bands equal to $\approx 1/N=0.125$ to five decimal places, traced to isotropic norm collapse of the underlying graph embeddings (RMS magnitude down roughly 32-fold from initialization) under the interaction of coupled weight decay and a weak task gradient. Two independently trained models' embeddings differ only by scale (cosine similarity $>0.99$), indicating no directional/relational learning occurred at all, not merely that the learned structure is subtle or hard to visualize. We subsequently engineered and tested a fix targeting this exact mechanism --- unit-normalizing the embeddings before the bilinear product and excluding them from weight decay (Section~\ref{sec:graphfix}) --- and confirmed it resolves the norm collapse (embedding RMS preserved at 0.96--1.01$\times$ initialization) without resolving the underlying failure to learn: the corrected embeddings move only 0.6--2.0\% in L2 norm from random initialization, retain cosine similarity 0.9998--1.0000 with their own initialization, and produce adjacency matrices correlated 0.994--0.999 with the untrained, randomly initialized adjacency. This is now the primary interpretability finding of this paper and should be read together with the ablation limitation above and with the constant-forecast finding (Section~\ref{sec:constantforecast}): the per-band mechanism's failure to demonstrate an accuracy advantage (Section~\ref{sec:ablation-results}), its failure to learn differentiated structure even before any fix (Section~\ref{sec:collapse}), and its continued failure to learn differentiated structure after a verified, targeted fix (Section~\ref{sec:graphfix}) are the same underlying phenomenon viewed from three angles, not three independent negative results, and an apparent tuned-configuration reversal of the ablation finding (Section~\ref{sec:confound-tuned}) does not survive scrutiny either, once traced to a degenerate constant-forecast comparison (Section~\ref{sec:constantforecast}). The mode-fusion attention weights are separately near-uniform (0.19--0.22 across bands), but that artifact contains only 24 test-set samples and does not support a claim about drift or trend over the test period.
     \item \textbf{Directional accuracy is not interpretable without a sign-concentration and majority-class-null check, and this paper's own earlier drafts did not apply one.} Section~\ref{sec:constantforecast} documents that at least two models evaluated in this study (\texttt{pooled\_graph\_graphfix} and \texttt{pooled\_graph\_matched\_params\_tuned}) emit near-constant, near-zero-variance forecasts whose directional accuracy exactly reproduces the test period's unconditional class frequency at each horizon rather than reflecting real directional skill, and that this artifact was responsible for an apparent reversal of this paper's central ablation finding that we have since retracted (Section~\ref{sec:confound-tuned}). We did not archive per-sample prediction arrays for every ablation and confound-check variant, so we cannot directly check prediction dispersion or sign concentration for every reported DA figure; where those raw arrays are unavailable, we instead applied the base-rate-identity half of the check (DA value against the test period's class frequency, Section~\ref{sec:constantforecast}) to every cell of the untuned ablation table (Table~\ref{tab:ablation}) directly, since that check requires only the DA figure and the known class frequencies and not the underlying predictions. This found six confirmed artifact cells, marked in Table~\ref{tab:ablation} (Section~\ref{sec:ablation-results}); RMSE/MAE comparisons, which are not subject to the same constant-forecast artifact, should still be weighted more heavily than DA comparisons wherever the two are in tension.
     \item \textbf{Multiple testing across 24 significance tests.} The baseline comparison runs 24 Diebold-Mariano tests (six baselines $\times$ four horizons); we apply a Holm-Bonferroni correction at family-wise $\alpha=0.05$ (Section~\ref{sec:experiments}), which reduces the significant count from 12 to 8 (all favoring VMD-MFGNN) and removes the one significant result favoring a baseline (XGBoost at $h=1$). We report both raw and corrected significance in Table~\ref{tab:dm} rather than only the more favorable raw count.
-    \item \textbf{Single-seed results.} All reported results, including ablations, come from a single training run per model/variant, not repeated across multiple random seeds. Seed-to-seed variance has not been characterized given the project timeline, and reported numbers should be read as point estimates rather than as characterizing a distribution.
+    \item \textbf{Single-seed main and ablation results; seed variance characterized only in a separate robustness run.} Every number in Table~\ref{tab:main}, Table~\ref{tab:dm}, Table~\ref{tab:ablation} and Table~\ref{tab:confound-tuned} comes from a single training run per model/variant and should be read as a point estimate rather than as characterizing a distribution; we did not repeat those runs across seeds. Seed-to-seed variance \emph{is} characterized, but only for the two variants carrying RQ1 and only at the tuned configuration, in the five-seed robustness experiment of Section~\ref{sec:robustness}, where the per-band model's test average MSE has a coefficient of variation of 1.32\% across seeds. That experiment additionally established a larger and more troubling figure: four cells at a genuinely identical configuration and identical seed, differing only in which experiment driver launched them, span 7.54\% in test average MSE. Run-to-run nondeterminism at this data scale therefore exceeds every architectural axis effect this study measured, which is the correct scale against which to read any single-run difference reported in the tables above.
+    \item \textbf{Three robustness cells are diagnosed from barely-trained checkpoints, and a corrected re-diagnosis is pending.} Section~\ref{sec:robustness} discloses that three of its 19 diagnostic cells (the EMD arm, the per-band seed-44 run, and the pooled seed-45 run) early-stopped such that their saved best-validation weights embody only one to two epochs of training, so their automated ``not collapsed'' verdicts measure training duration rather than any property of the axis being varied. We report them as unusable rather than as counterexamples, and the collapse claim in that section is stated over the 16 cells that trained beyond that margin. The practical consequence is that the decomposition axis carries no usable evidence at present, since EMD contributes exactly one cell to the suite. \todohl{[TODO: a re-run diagnosing these three cells from final-epoch rather than best-validation weights is in progress; update this item, and the highlighted values in the robustness subsection, once it completes.]}
     \item \textbf{Asymmetric hyperparameter optimization interacts with, but does not explain, the naive-baseline result.} The HPO asymmetry disclosed above (item 7) means the main-table comparison among the seven fitted models is not a fully controlled architecture comparison. It does not, however, offer an explanation for why every model, tuned or not, fails to beat the naive zero-forecast baseline on MAE (Section~\ref{sec:main-results}): additional tuning of the baselines would be expected to narrow gaps \emph{among} the seven fitted models, not to change whether any of them exceeds a baseline that requires no tuning at all.
 \end{enumerate}
 
@@ -520,13 +739,20 @@ Section~\ref{sec:discussion} answers this paper's research questions in full aga
 
 This paper's contribution is therefore not the architecture it set out to propose. It is the evaluation protocol --- leakage-safe VMD, capacity-matched ablations, a naive baseline this literature typically omits, and a multiple-testing-corrected significance test --- applied honestly enough to surface, rather than paper over, the naive-baseline result, the mechanism behind the negative ablation finding and a verified attempt to fix it, and a constant-forecast artifact that would otherwise have quietly overturned this paper's central negative finding. We offer three things we believe are useful beyond this specific architecture: a quantified, transferable diagnosis of embedding collapse relevant to other learned-graph financial GNN architectures at similarly low node counts, MBTI-Net-style designs included; a demonstration that diagnosing and fixing such a collapse mechanically does not guarantee the fix produces a learning signal, which we believe generalizes to other low-signal auxiliary parameters trained jointly with a dominant pathway; and a concrete, quantified illustration of why directional accuracy must be reported alongside prediction sign concentration and a majority-class null, since a degenerate model can otherwise report a plausible-looking accuracy figure by accident. A study that tests a hypothesis rigorously, explains why it failed, tests its own explanation, and reports all of it plainly, including a retraction of its own promising-looking intermediate result, is a more useful contribution to this literature than one that reports only confirming evidence.
 
-Future work includes: (1) an explicit sparsity or entropy regularizer on the adjacency, or an auxiliary loss that directly rewards differentiated per-band structure, since Section~\ref{sec:graphfix} shows that removing weight decay's pull alone is insufficient---the task gradient reaching these embeddings needs to be strengthened or supplemented, not merely left unopposed; (2) a walk-forward evaluation protocol with multiple folds, enabling paired significance testing on the ablations; (3) multi-seed replication, which would also let a majority-class-null and dispersion check (Section~\ref{sec:constantforecast}) be applied systematically across seeds rather than only where degeneracy happened to be noticed; (4) symmetric hyperparameter optimization across all compared models, budget permitting; (5) extending the naive-baseline and economic-significance checks (Section~\ref{sec:econ}) to other base-metal commodities to test whether the difficulty of beating a trivial forecast is specific to copper's 2022--2025 regime or a more general property of this problem class; and (6) testing whether $N=8$ nodes is simply too small a graph for this class of learned bilinear adjacency to have a meaningful task gradient at all, independent of any decay or normalization fix, by repeating the diagnosis-and-fix protocol of Section~\ref{sec:graphfix} on a larger multi-commodity node set.
+Future work includes: (1) an explicit sparsity or entropy regularizer on the adjacency, or an auxiliary loss that directly rewards differentiated per-band structure, since Section~\ref{sec:graphfix} shows that removing weight decay's pull alone is insufficient---the task gradient reaching these embeddings needs to be strengthened or supplemented, not merely left unopposed; (2) a walk-forward evaluation protocol with multiple folds, enabling paired significance testing on the ablations; (3) extending multi-seed replication beyond the two RQ1 variants covered in Section~\ref{sec:robustness} to the full main and ablation tables, which would also let a majority-class-null and sign-concentration check (Section~\ref{sec:constantforecast}) be applied systematically across seeds rather than only where degeneracy happened to be noticed, and would put the tables' point estimates on the same footing as the 7.54\% replicate noise floor that section measures; (4) symmetric hyperparameter optimization across all compared models, budget permitting, the wider single-model search of Section~\ref{sec:robustness} having addressed only the proposed model's own search width; (5) extending the naive-baseline and economic-significance checks (Section~\ref{sec:econ}) to other base-metal commodities to test whether the difficulty of beating a trivial forecast is specific to copper's 2022--2025 regime or a more general property of this problem class; and (6) testing whether $N=8$ nodes is simply too small a graph for this class of learned bilinear adjacency to have a meaningful task gradient at all, independent of any decay or normalization fix, by repeating the diagnosis-and-fix protocol of Section~\ref{sec:graphfix} on a larger multi-commodity node set.
 
 %% ============================================================
 \section*{Data Availability}
 
 All data used in this study is publicly available via the Yahoo Finance API (tickers listed in Section~\ref{sec:experiments}). No FRED, BDI, TC/RC, or COT data are used.
+
+\section*{Code Availability}
+
+The full training, evaluation, diagnostic and robustness-experiment code for this
+study is maintained in a single repository.
 % TODO: add code repository URL once the repository is made public.
+\todohl{[TODO: insert the public code repository URL here once the repository is
+made public.]}
 
 \section*{CRediT Author Statement}
 
