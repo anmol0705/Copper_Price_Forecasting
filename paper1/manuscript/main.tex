@@ -152,6 +152,7 @@ The central architectural choice in VMD-MFGNN is constructing a \emph{separate} 
 
 We employ learned adaptive adjacency matrices following \citet{Wu2020mtgnn}, applied independently within each band. For each band $k$, two embedding matrices $\mathbf{E}^{(1)}_k, \mathbf{E}^{(2)}_k \in \mathbb{R}^{N \times d}$ are randomly initialized and jointly optimized:
 \begin{equation}
+\label{eq:graph}
 \mathbf{A}_k = \text{softmax}\left(\text{ReLU}\left(\mathbf{E}^{(1)}_k {\mathbf{E}^{(2)}_k}^\top\right)\right)
 \end{equation}
 (the implementation applies no $1/\sqrt{d}$ scaling to the bilinear logits before ReLU/softmax; we state this explicitly because this absence turns out to matter for the collapse mechanism diagnosed in Section~\ref{sec:collapse}). Each row of $\mathbf{A}_k$ is then sparsified to its top-$k=4$ entries (out of $N=8$), so the realized per-band graph is not fully connected; the complexity analysis in Section~\ref{sec:complexity} accounts for this sparsification. This produces $K$ adjacency matrices, one per frequency band, each intended to capture dependencies at its own frequency scale. As an ablation-only alternative (Section~\ref{sec:ablation}), the learned adjacency can be replaced by a fixed, precomputed adjacency built from Pearson correlation between variables' band signals, thresholded at $|r| > 0.3$ (edges below this magnitude are dropped, following a conventional weak-to-moderate correlation cutoff).
@@ -162,6 +163,7 @@ For each band $k$, a \textbf{FrequencyBandModule} processes the $k$-th modes of 
 
 \textbf{Graph Attention Layer.} At each timestep $t$, the mode values $\mathbf{u}^{(k)}_t \in \mathbb{R}^{N}$ are projected to hidden dimension $d_h$ and processed by a multi-head Graph Attention Network (GAT) \citep{Velickovic2018}:
 \begin{equation}
+\label{eq:gat}
 \mathbf{h}^{(k)}_{t} = \text{GAT}(\mathbf{u}^{(k)}_{t}, \mathbf{A}_k) + \mathbf{u}^{(k)}_{t}
 \end{equation}
 with residual connections and layer normalization, stacked over \texttt{num\_gnn\_layers} GAT layers.
@@ -177,78 +179,8 @@ Algorithm~\ref{alg:vmdmfgnn} summarizes the full forward pass just described, fr
 
 \begin{figure*}[!t]
 \centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-  font=\small,
-  box/.style={draw=black!70, rounded corners=2pt, fill=black!3, align=center,
-              inner sep=3.5pt, minimum height=11mm, text width=39mm},
-  io/.style={box, fill=black!10},
-  arr/.style={-{Latex[length=2.2mm]}, semithick, black!75},
-]
-%% ---- per-band chain (Algorithm lines 2--10) ----
-\node[box] (gc)
-  {\textbf{Per-band graph construction}\\[1pt]
-   $\mathbf{E}^{(1)}_k,\mathbf{E}^{(2)}_k\in\mathbb{R}^{N\times d}$\\
-   $\mathbf{A}_k=\mathrm{softmax}(\mathrm{ReLU}(\mathbf{E}^{(1)}_k{\mathbf{E}^{(2)}_k}^{\!\top}))$\\
-   row-wise top-$k$, $k=4$ of $N=8$};
-\node[box, below=6mm of gc] (gat)
-  {\textbf{Graph attention}\\[1pt]
-   project $\mathbf{u}^{(k)}_t\in\mathbb{R}^{N}\!\to\!\mathbb{R}^{d_h}$;\\
-   $H$-head GAT on $\mathbf{A}_k$ at each $t$,\\
-   residual $+$ LayerNorm, $\times$ layers};
-\node[box, below=6mm of gat] (lstm)
-  {\textbf{Temporal LSTM}\\[1pt]
-   per variable, over $t=1,\ldots,L$\\
-   $\mathbf{z}^{(k)}=\mathrm{LSTM}(\mathbf{h}^{(k)}_1,\ldots,\mathbf{h}^{(k)}_L)$};
-\node[box, below=6mm of lstm] (ext)
-  {\textbf{Read out target node}\\[1pt]
-   copper $=$ node $0$\\
-   $\mathbf{z}^{(k)}_{\mathrm{Cu}}\in\mathbb{R}^{d_h}$};
-\draw[arr] (gc) -- node[right=1mm, font=\scriptsize] {edge list $+$ weights} (gat);
-\draw[arr] (gat) -- node[right=1mm, font=\scriptsize] {$\mathbf{h}^{(k)}_t$} (lstm);
-\draw[arr] (lstm) -- (ext);
-
-\begin{scope}[on background layer]
-  \node[draw=black!25, dashed, rounded corners=3pt, fill=white,
-        fit=(gc)(gat)(lstm)(ext), inner sep=4.5mm, xshift=4mm, yshift=4mm] {};
-  \node[draw=black!35, dashed, rounded corners=3pt, fill=white,
-        fit=(gc)(gat)(lstm)(ext), inner sep=4.5mm, xshift=2mm, yshift=2mm] {};
-  \node[draw=black!60, dashed, rounded corners=3pt, fill=white,
-        fit=(gc)(gat)(lstm)(ext), inner sep=4.5mm] (bandbox) {};
-\end{scope}
-\node[above=6mm of bandbox.north, align=center, font=\small\itshape]
-  (bandlabel) {constructed and run independently\\ for each of the $K=5$ frequency bands};
-
-%% ---- input side ----
-\node[io, left=13mm of bandbox] (vmd)
-  {\textbf{VMD decomposition}\\[1pt]
-   per variable, $K=5$ modes;\\
-   leakage-safe daily refit,\\
-   modes sorted by $\omega_k$\\
-   $\mathbf{U}\in\mathbb{R}^{N\times K\times L}$};
-\node[io, left=11mm of vmd] (inp)
-  {\textbf{Raw input window}\\[1pt]
-   $N=8$ commodity / macro series\\
-   lookback $L=60$ trading days};
-
-%% ---- output side ----
-\node[box, right=13mm of bandbox] (fusion)
-  {\textbf{Attention-based mode fusion}\\[1pt]
-   $w_k\propto\exp(\mathbf{q}^{\!\top}\mathbf{W}\mathbf{z}^{(k)}_{\mathrm{Cu}})$\\
-   $\mathbf{z}_{\mathrm{fused}}=\sum_{k=1}^{K} w_k\,\mathbf{z}^{(k)}_{\mathrm{Cu}}$};
-\node[box, right=11mm of fusion] (heads)
-  {\textbf{Per-horizon heads}\\[1pt]
-   $\hat r_{t+h}=\mathrm{MLP}_h(\mathbf{z}_{\mathrm{fused}})$\\
-   $h\in\{1,5,10,22\}$ trading days};
-
-\draw[arr] (inp) -- node[above, font=\scriptsize] {$\mathbb{R}^{N\times L}$} (vmd);
-\draw[arr] (vmd.east) -- ++(6mm,0) |- node[pos=0.62, right=0.5mm, font=\scriptsize]
-  {$\mathbf{u}^{(k)}_t$} (gat.west);
-\draw[arr] (ext.east) -- ++(6mm,0) |- node[pos=0.62, left=0.5mm, font=\scriptsize]
-  {$\mathbf{z}^{(k)}_{\mathrm{Cu}}$} (fusion.west);
-\draw[arr] (fusion) -- node[above, font=\scriptsize] {$\mathbb{R}^{d_h}$} (heads);
-\end{tikzpicture}}
-\caption{VMD-MFGNN forward pass, corresponding block-for-block to Algorithm~\ref{alg:vmdmfgnn}. An $N=8$ variable window of length $L=60$ trading days is decomposed by leakage-safe daily-refit VMD into $K=5$ frequency-band modes per variable (Algorithm line 1). The dashed stack denotes the per-band branch instantiated once for each of the $K$ bands, with its own embedding pair $\mathbf{E}^{(1)}_k,\mathbf{E}^{(2)}_k$ and its own adjacency $\mathbf{A}_k$, row-wise sparsified to top-$k=4$ of $N=8$ before being passed to the band's GAT as an edge list (lines 3--5); band-$k$ mode values are projected to $d_h$ and passed through the GAT at each timestep with residual connections and layer normalization, then through a per-variable LSTM over the $L$ timesteps, and copper's representation is read from node $0$ (lines 6--11). The $K$ band representations are combined by the learned-query attention fusion of Section~\ref{sec:method} (lines 13--14) and mapped to the four forecast horizons by separate heads (lines 15--16). The separate-graph-per-band structure inside the dashed stack is the architectural choice this paper tests; the pooled-graph ablation of Section~\ref{sec:ablation} replaces it with one graph shared across bands.}
+\includegraphics[width=\textwidth]{figures/architecture_diagram.pdf}
+\caption{VMD-MFGNN forward pass. An $N=8$ variable window of length $L=60$ trading days (copper, aluminum, gold, oil, DXY, S\&P 500, VIX, US10Y) is decomposed by leakage-safe daily-refit VMD into $K=5$ frequency-band modes, reusing the same band names and colors as Figure~\ref{fig:vmd}. \textbf{The five colored node-link icons are this paper's central architectural claim made visible}: a separate learned graph $\mathbf{A}_k$ is constructed independently for each band (dashed group), each with its own bilinear embedding pair $\mathbf{E}^{(1)}_k,\mathbf{E}^{(2)}_k$ (Eq.~\ref{eq:graph}), row-sparsified to top-$k=4$ of $N=8$ edges, and fed to that band's own GAT and LSTM (Eq.~\ref{eq:gat}). The five resulting representations $\mathbf{z}^{(k)}$ are combined by learned-query attention fusion and mapped to the four forecast horizons by separate heads. Algorithm~\ref{alg:vmdmfgnn} gives the same forward pass line-by-line; the pooled-graph ablation of Section~\ref{sec:ablation} replaces the five per-band graphs shown here with a single graph shared across bands (Figure~\ref{fig:perband-vs-pooled}). Section~\ref{sec:collapse} shows that, once trained, all five $\mathbf{A}_k$ collapse to a near-uniform graph indistinguishable from an untrained one.}
 \label{fig:architecture}
 \end{figure*}
 
@@ -331,6 +263,15 @@ VMD-MFGNN, the proposed model, is tuned via a lightweight Optuna study (TPE samp
 \label{sec:ablation}
 
 Six variants isolate the contribution of each architectural component, all trained at the untuned default configuration (Section~\ref{sec:impl}, Section~\ref{sec:complexity})---HPO (Section~\ref{sec:hpo}) is applied only to the main-table VMD-MFGNN, never to any ablation variant. Because this study uses a single chronological split rather than multiple walk-forward folds or multiple random seeds (Section~\ref{sec:limitations}), the ablation results below are reported as point estimates per horizon, without a paired significance test; a valid resampling unit (folds or seeds) does not exist for \emph{this} run to compute one. A separate five-seed repetition of the two variants that carry RQ1, run later at the tuned configuration and therefore not directly comparable to this table, does admit a paired test and is reported in Section~\ref{sec:robustness}.
+
+Figure~\ref{fig:perband-vs-pooled} shows the architectural difference RQ1 asks about: variant (a), the full model of Figure~\ref{fig:architecture}, learns $K=5$ independent adjacency matrices and runs $K$ separate GAT+LSTM branches before fusing them; variant (c) pools the band representations first and learns a single shared adjacency over that pooled representation. The remaining four variants (b, d, and the two capacity settings of c) are described below.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/perband_vs_pooled.pdf}
+\caption{The RQ1 comparison made visible: (a) \texttt{full\_model} builds a separate learned graph per frequency band; (b) \texttt{pooled\_graph} pools band representations before constructing a single shared graph. Section~\ref{sec:collapse} shows that in the trained model, (a)'s five graphs collapse to a near-uniform adjacency indistinguishable from one another, which is why the ablation in Table~\ref{tab:ablation} does not show a clean advantage for (a) over (b).}
+\label{fig:perband-vs-pooled}
+\end{figure}
 
 \begin{itemize}
     \item \textbf{(a) Full model}: VMD decomposition into $K=5$ bands, with a separate learned graph per band, at the untuned default configuration (393{,}476 parameters). This is a distinct trained instance from the HPO-tuned VMD-MFGNN reported in Table~\ref{tab:main} (1{,}461{,}124 parameters); see Section~\ref{sec:complexity}.
