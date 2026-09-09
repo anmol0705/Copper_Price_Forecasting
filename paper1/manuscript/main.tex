@@ -13,6 +13,7 @@
 \usepackage{natbib}
 \usepackage{soul}
 \usepackage{tikz}
+\usepackage{stfloats}
 \usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
 
 % Yellow-highlighted, PDF-visible TODO marker. Every unresolved item in this
@@ -30,6 +31,8 @@
 \renewcommand{\bottomfraction}{0.85}
 \renewcommand{\textfraction}{0.10}
 \renewcommand{\floatpagefraction}{0.85}
+\renewcommand{\dbltopfraction}{0.9}
+\renewcommand{\dblfloatpagefraction}{0.85}
 \setcounter{topnumber}{4}
 \setcounter{bottomnumber}{4}
 \setcounter{totalnumber}{6}
@@ -386,12 +389,13 @@ Unconditional up-day freq.\ (\%) & \multicolumn{4}{c}{} & \multicolumn{4}{c}{} &
 \end{tabular}%
 }
 \end{table*}
+\FloatBarrier
 
 Table~\ref{tab:main} makes the central finding of this paper visible in one place: \textbf{the naive zero-forecast baseline wins MAE at all four horizons and RMSE at two of four horizons ($h=1$ and $h=22$), against every one of the seven fitted models, including VMD-MFGNN.} No model beats it on MAE anywhere in the table; VMD-MFGNN and XGBoost each beat it on RMSE at one horizon ($h=5$ and $h=10$ respectively), and nowhere else does any model do better than predicting zero return. All seven models' $R^2$ values are negative or approximately zero on this test split (not tabulated here for space, computed identically to RMSE/MAE from the same saved arrays), consistent with none of them explaining variance beyond what a constant forecast already captures. DA tells a related story once read against the correct null: the relevant baseline for DA is not 50\% but the test period's own unconditional up-day frequency, which is 51.0\%, 53.0\%, 55.4\%, and 55.3\% at $h=1,5,10,22$ respectively (bottom row) --- itself a symptom of the strong upward drift copper exhibited over 2022--2025. The complementary down-day frequencies are 48.37\%, 46.95\%, 44.21\%, and 44.72\% (they do not sum to exactly 100\% with the up-day figures because a small number of test days record an exactly zero return); we state them explicitly because the base-rate-identity checks reported below and in Section~\ref{sec:ablation-results} are made against whichever of the two frequencies matches the sign a degenerate model emits, and a reader cannot otherwise verify those flags from the table alone. VMD-MFGNN's headline $h=1$ DA of 52.5\% is only 1.5 percentage points above that null, and at $h=5,10,22$ no model in this table, including VMD-MFGNN, exceeds the unconditional up-day frequency at all. We read this table as showing that this study's seven fitted models, including the proposed one, are best understood as a ranking among approaches that do not clearly outperform doing nothing, rather than as a demonstration that any of them, including VMD-MFGNN, has found exploitable structure in copper returns at this data scale. Section~\ref{sec:results-dm} still reports pairwise significance among the seven fitted models, since that question --- do these models differ meaningfully from one another --- is separate from, and does not resolve, the more basic question this section answers in the negative. We applied this paper's own base-rate-identity check (Section~\ref{sec:constantforecast}) to every cell of this table directly, loading all 28 saved prediction arrays and checking both the fraction of predictions sharing the majority sign and whether DA exactly equals the test period's class frequency: exactly one cell qualifies, Transformer at $h=5$ (100\% positive-sign predictions, DA=53.05\% identical to the up-day frequency to four decimal places, marked $^{\ddagger}$ above). Transformer's $h=22$ DA (44.72\%) also happens to numerically equal the down-day frequency at that horizon, but this is a coincidental count match, not the same artifact: only 89.4\% of its predictions are negative-sign and its prediction standard deviation is a healthy fraction of the true-return standard deviation, so we do not flag it. No other cell in this table shows either signature.
 
 Figure~\ref{fig:comparison} shows the seven-model comparison graphically (grouped bar charts of RMSE, MAE, and DA by model and horizon; the naive baseline is not part of this bar chart, which mirrors the pipeline's model-comparison output). No model's saved evaluation record carried an error flag, so all seven models are represented in both Table~\ref{tab:main} and Figure~\ref{fig:comparison}.
 
-\begin{figure*}[!t]
+\begin{figure*}[!tb]
 \centering
 \includegraphics[width=\textwidth]{../results/archive_paper1/figures/fig4_model_comparison.pdf}
 \caption{RMSE, MAE, and Directional Accuracy by model and horizon, for VMD-MFGNN and the six baselines.}
@@ -499,7 +503,7 @@ At the tuned configuration (Table~\ref{tab:confound-tuned}), the directional-acc
 
 Figure~\ref{fig:graphs} visualizes the learned adjacency matrices $\mathbf{A}_k$ for each of the $K=5$ frequency bands, read from the HPO-tuned VMD-MFGNN's trained \texttt{FrequencyGraphConstructor} output.
 
-\begin{figure*}[!t]
+\begin{figure*}[!tb]
 \centering
 \includegraphics[width=\textwidth]{../results/archive_paper1/figures/fig2_frequency_graphs.pdf}
 \caption{Learned adjacency matrices for each of the five VMD frequency bands.}
@@ -512,7 +516,7 @@ We diagnosed the mechanism behind this collapse directly from the trained model'
 
 Figure~\ref{fig:collapse} makes the two halves of this mechanism visible side by side, using the 19-cell robustness suite of Section~\ref{sec:robustness} rather than the single model discussed above, because that suite is the only place in this study where embedding geometry was measured across many independently trained checkpoints. Panel (a) is the collapse itself: relative embedding magnitude falls across six and a half orders of magnitude, from 33\% of initialization at five epochs of training to $9\times10^{-8}$ of it at thirty-seven, and the descent is orderly rather than configuration-dependent. Panel (b) is the half that makes the finding a diagnosis rather than an observation: over that same span the embeddings' cosine similarity to their own random initialization moves by a single factor of 2.2, from 0.93 to 0.42, and does so as a smooth function of training duration alone. A mechanism that had found task-relevant structure would show the opposite disproportion --- direction moving decisively while magnitude stayed bounded. What the two panels show instead is embeddings shrinking essentially in place.
 
-\begin{figure*}[!t]
+\begin{figure*}[!tb]
 \centering
 \includegraphics[width=\textwidth]{../results/archive_paper1/figures/fig6_collapse_mechanism.pdf}
 \caption{The isotropic norm collapse, plotted from the 19 independently trained diagnostic cells of Section~\ref{sec:robustness} (band-count sweep, decomposition comparison, loss comparison, and the five-seed repetition of both graph variants). The horizontal axis is the number of epochs of training embodied in the diagnosed checkpoint, $E$, which ranges from 5 to 37 across the suite. (a) Mean embedding RMS relative to the run's own random initialization, on a logarithmic scale: it falls from $0.331$ at $E=5$ to $9.4\times10^{-8}$ at $E=37$, crossing the diagnostic's $0.5$ collapse threshold (defined against the Xavier reference RMS of $0.2885$, which each run's own initialization matches to within 5.6\% in every band plotted, so the two normalizations are interchangeable at this figure's scale) before the earliest cell in the corrected suite, and continuing monotonically thereafter (Spearman $\rho = -0.993$, $p = 3.4\times10^{-17}$). (b) Mean cosine similarity of the same embeddings to that same initialization, on a linear scale spanning the full $[0,1]$ range: it moves only from $0.927$ to $0.420$ over the identical span, tracking training duration with $\mathrm{cos} = 0.984 - 0.0168\,E$ ($R^2 = 0.965$, $\rho = -0.990$). Marker shape and color identify which robustness axis produced each cell; the axes are visually interleaved, consistent with the absence of any residual axis effect once training duration is known (one-way ANOVA on the fit residuals, $F = 0.791$, $p = 0.518$). Open circles joined by dashed arrows are the three cells whose original best-validation checkpoints had been frozen by early stopping after one to two epochs and were subsequently re-diagnosed from final-epoch weights: these are the same three runs observed twice, and they traverse the same trajectory. Read together, the panels are the paper's central mechanistic claim --- six and a half orders of magnitude of shrinkage against a factor of 2.2 of rotation, the signature of embeddings rescaled toward the origin by weight decay rather than rotated toward task structure by a learning signal. The residual rotation in (b) should not be read as learning: it is confounded with the shrinkage itself, since the cosine is computed on raw embedding vectors whose direction, at magnitudes of $10^{-3}$ and below, is increasingly dominated by accumulated floating-point residue rather than by any gradient --- the gradient reaching these parameters is exactly zero in the three most-trained cells shown.}
@@ -527,7 +531,7 @@ We return to what this implies for the ablation results and for learned-graph GN
 
 Figure~\ref{fig:attention} shows the fusion attention weights (Section~\ref{sec:method}), read from the model's saved mode-importance output. This artifact contains only 24 samples (the model's last, partial evaluation batch), not the full 984-sample test set used for every other reported figure in this paper; we state this sample count explicitly because it materially limits what can be claimed from it. Within these 24 samples, the mode-fusion attention weights are close to uniform across the $K=5$ bands, ranging from approximately 0.19 to 0.22. We do not report a trend or drift over the test period from this artifact: 24 samples is too small a window, and too unrepresentative of the four-year test period as a whole (it reflects only the final evaluation batch), to support a claim about how attention evolves over time, and an earlier draft's description of a ``gradual drift over the test period'' from this same data is not defensible at this sample size and has been removed. What the near-uniform range across those 24 samples does support, consistent with the adjacency-collapse finding above, is that no single frequency band dominates fusion sharply in this trained model; we do not extend that observation further than the data allow.
 
-\begin{figure}[!t]
+\begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{../results/archive_paper1/figures/fig3_attention_weights.pdf}
 \caption{Mode-fusion attention weights by VMD frequency band.}
@@ -536,7 +540,7 @@ Figure~\ref{fig:attention} shows the fusion attention weights (Section~\ref{sec:
 
 Figure~\ref{fig:vmd} shows the VMD decomposition itself (copper price and its five frequency-band modes), included here for completeness as the input representation that both the per-band graphs and the fusion attention operate on.
 
-\begin{figure*}[!t]
+\begin{figure*}[!tb]
 \centering
 \includegraphics[width=\textwidth]{../results/archive_paper1/figures/fig1_vmd_decomposition.pdf}
 \caption{Variational Mode Decomposition of the copper price series into $K=5$ frequency-band modes.}
