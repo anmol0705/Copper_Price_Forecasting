@@ -12,6 +12,8 @@
 \usepackage{subcaption}
 \usepackage{natbib}
 \usepackage{soul}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
 
 % Yellow-highlighted, PDF-visible TODO marker. Every unresolved item in this
 % manuscript is wrapped in \todohl so it can be found by searching the compiled
@@ -168,7 +170,84 @@ with residual connections and layer normalization, stacked over \texttt{num\_gnn
 
 The output for the target variable (copper, node 0) is $\mathbf{z}^{(k)}_{\text{Cu}} \in \mathbb{R}^{d_h}$.
 
-Algorithm~\ref{alg:vmdmfgnn} summarizes the full forward pass just described, from raw multivariate input through per-band graph construction and GAT+LSTM processing to the fusion and prediction steps detailed in the remainder of this section. It describes the architecture as designed; whether the per-band graph mechanism (lines 4--7) learns the differentiated structure it is intended to is an empirical question taken up separately in Section~\ref{sec:collapse}.
+Algorithm~\ref{alg:vmdmfgnn} summarizes the full forward pass just described, from raw multivariate input through per-band graph construction and GAT+LSTM processing to the fusion and prediction steps detailed in the remainder of this section, and Figure~\ref{fig:architecture} renders the same forward pass as a block diagram with tensor shapes and the per-band repetition made explicit. The two are intended to be read together: every block in the figure corresponds to one or more numbered lines of the algorithm, and the figure adds no component the algorithm does not specify. It describes the architecture as designed; whether the per-band graph mechanism (lines 4--7) learns the differentiated structure it is intended to is an empirical question taken up separately in Section~\ref{sec:collapse}.
+
+\begin{figure*}[!t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\small,
+  box/.style={draw=black!70, rounded corners=2pt, fill=black!3, align=center,
+              inner sep=3.5pt, minimum height=11mm, text width=39mm},
+  io/.style={box, fill=black!10},
+  arr/.style={-{Latex[length=2.2mm]}, semithick, black!75},
+]
+%% ---- per-band chain (Algorithm lines 2--10) ----
+\node[box] (gc)
+  {\textbf{Per-band graph construction}\\[1pt]
+   $\mathbf{E}^{(1)}_k,\mathbf{E}^{(2)}_k\in\mathbb{R}^{N\times d}$\\
+   $\mathbf{A}_k=\mathrm{softmax}(\mathrm{ReLU}(\mathbf{E}^{(1)}_k{\mathbf{E}^{(2)}_k}^{\!\top}))$\\
+   row-wise top-$k$, $k=4$ of $N=8$};
+\node[box, below=6mm of gc] (gat)
+  {\textbf{Graph attention}\\[1pt]
+   project $\mathbf{u}^{(k)}_t\in\mathbb{R}^{N}\!\to\!\mathbb{R}^{d_h}$;\\
+   $H$-head GAT on $\mathbf{A}_k$ at each $t$,\\
+   residual $+$ LayerNorm, $\times$ layers};
+\node[box, below=6mm of gat] (lstm)
+  {\textbf{Temporal LSTM}\\[1pt]
+   per variable, over $t=1,\ldots,L$\\
+   $\mathbf{z}^{(k)}=\mathrm{LSTM}(\mathbf{h}^{(k)}_1,\ldots,\mathbf{h}^{(k)}_L)$};
+\node[box, below=6mm of lstm] (ext)
+  {\textbf{Read out target node}\\[1pt]
+   copper $=$ node $0$\\
+   $\mathbf{z}^{(k)}_{\mathrm{Cu}}\in\mathbb{R}^{d_h}$};
+\draw[arr] (gc) -- node[right=1mm, font=\scriptsize] {edge list $+$ weights} (gat);
+\draw[arr] (gat) -- node[right=1mm, font=\scriptsize] {$\mathbf{h}^{(k)}_t$} (lstm);
+\draw[arr] (lstm) -- (ext);
+
+\begin{scope}[on background layer]
+  \node[draw=black!25, dashed, rounded corners=3pt, fill=white,
+        fit=(gc)(gat)(lstm)(ext), inner sep=4.5mm, xshift=4mm, yshift=4mm] {};
+  \node[draw=black!35, dashed, rounded corners=3pt, fill=white,
+        fit=(gc)(gat)(lstm)(ext), inner sep=4.5mm, xshift=2mm, yshift=2mm] {};
+  \node[draw=black!60, dashed, rounded corners=3pt, fill=white,
+        fit=(gc)(gat)(lstm)(ext), inner sep=4.5mm] (bandbox) {};
+\end{scope}
+\node[above=6mm of bandbox.north, align=center, font=\small\itshape]
+  (bandlabel) {constructed and run independently\\ for each of the $K=5$ frequency bands};
+
+%% ---- input side ----
+\node[io, left=13mm of bandbox] (vmd)
+  {\textbf{VMD decomposition}\\[1pt]
+   per variable, $K=5$ modes;\\
+   leakage-safe daily refit,\\
+   modes sorted by $\omega_k$\\
+   $\mathbf{U}\in\mathbb{R}^{N\times K\times L}$};
+\node[io, left=11mm of vmd] (inp)
+  {\textbf{Raw input window}\\[1pt]
+   $N=8$ commodity / macro series\\
+   lookback $L=60$ trading days};
+
+%% ---- output side ----
+\node[box, right=13mm of bandbox] (fusion)
+  {\textbf{Attention-based mode fusion}\\[1pt]
+   $w_k\propto\exp(\mathbf{q}^{\!\top}\mathbf{W}\mathbf{z}^{(k)}_{\mathrm{Cu}})$\\
+   $\mathbf{z}_{\mathrm{fused}}=\sum_{k=1}^{K} w_k\,\mathbf{z}^{(k)}_{\mathrm{Cu}}$};
+\node[box, right=11mm of fusion] (heads)
+  {\textbf{Per-horizon heads}\\[1pt]
+   $\hat r_{t+h}=\mathrm{MLP}_h(\mathbf{z}_{\mathrm{fused}})$\\
+   $h\in\{1,5,10,22\}$ trading days};
+
+\draw[arr] (inp) -- node[above, font=\scriptsize] {$\mathbb{R}^{N\times L}$} (vmd);
+\draw[arr] (vmd.east) -- ++(6mm,0) |- node[pos=0.62, right=0.5mm, font=\scriptsize]
+  {$\mathbf{u}^{(k)}_t$} (gat.west);
+\draw[arr] (ext.east) -- ++(6mm,0) |- node[pos=0.62, left=0.5mm, font=\scriptsize]
+  {$\mathbf{z}^{(k)}_{\mathrm{Cu}}$} (fusion.west);
+\draw[arr] (fusion) -- node[above, font=\scriptsize] {$\mathbb{R}^{d_h}$} (heads);
+\end{tikzpicture}}
+\caption{VMD-MFGNN forward pass, corresponding block-for-block to Algorithm~\ref{alg:vmdmfgnn}. An $N=8$ variable window of length $L=60$ trading days is decomposed by leakage-safe daily-refit VMD into $K=5$ frequency-band modes per variable (Algorithm line 1). The dashed stack denotes the per-band branch instantiated once for each of the $K$ bands, with its own embedding pair $\mathbf{E}^{(1)}_k,\mathbf{E}^{(2)}_k$ and its own adjacency $\mathbf{A}_k$, row-wise sparsified to top-$k=4$ of $N=8$ before being passed to the band's GAT as an edge list (lines 3--5); band-$k$ mode values are projected to $d_h$ and passed through the GAT at each timestep with residual connections and layer normalization, then through a per-variable LSTM over the $L$ timesteps, and copper's representation is read from node $0$ (lines 6--11). The $K$ band representations are combined by the learned-query attention fusion of Section~\ref{sec:method} (lines 13--14) and mapped to the four forecast horizons by separate heads (lines 15--16). The separate-graph-per-band structure inside the dashed stack is the architectural choice this paper tests; the pooled-graph ablation of Section~\ref{sec:ablation} replaces it with one graph shared across bands.}
+\label{fig:architecture}
+\end{figure*}
 
 \begin{algorithm}[!t]
 \caption{VMD-MFGNN forward pass}
@@ -430,6 +509,15 @@ Figure~\ref{fig:graphs} visualizes the learned adjacency matrices $\mathbf{A}_k$
 Every kept edge weight in every one of the five bands is $\approx 0.125 = 1/8$ (the reciprocal of the $N=8$ node count) to five decimal places. This is not a subtle near-uniformity that a more sensitive statistic might resolve into graded structure; it is uniformity as precise as floating-point softmax output gets. An earlier verification pass over this same model had reported ``genuinely differentiated'' per-band graphs, based on the fact that \emph{which} edges survive top-$k$ sparsification differs somewhat across bands. That finding was real but shallow: it checked which edges the top-$k$ operator selected, not the values of the weights themselves, and those weights are uniform. The apparent per-band differentiation in edge \emph{selection} turns out to come from residual, fifth-decimal-place noise inherited from each band's independent random initialization, not from learned, task-relevant structure --- selecting top-$k$ among near-identical values is highly sensitive to exactly this kind of noise. We therefore withdraw the earlier framing rather than soften it: the learned per-band adjacency mechanism did not produce differentiated relational structure of any kind, topological or graded, in the trained model this paper reports.
 
 We diagnosed the mechanism behind this collapse directly from the trained model's checkpoints (no retraining required), and report the mechanism rather than only the symptom, since it is the more generalizable and more citable of the two. The most obvious candidate explanation --- that ReLU has ``died'' and is clipping all pre-softmax logits to zero, which would trivially produce a uniform softmax output --- does not hold up under a direct test: the fraction of negative pre-activation values is statistically indistinguishable before and after training (50.5\% at Xavier initialization vs.\ 56.3\% post-training), and removing the ReLU nonlinearity from the adjacency computation entirely still yields a uniform adjacency to four decimal places. The real mechanism is \textbf{isotropic norm collapse} of the graph embeddings $\mathbf{E}^{(1)}_k,\mathbf{E}^{(2)}_k$ (Section~\ref{sec:graph}): RMS embedding magnitude fell from its Xavier-initialization value of 0.2885 to 0.0089 over training, a factor of approximately 32, which drives the bilinear adjacency logits ($\mathbf{E}^{(1)}_k{\mathbf{E}^{(2)}_k}^\top$) from a standard deviation of 0.331 at initialization to 2.8$\times 10^{-4}$ post-training --- small enough to place softmax in its first-order, near-linear regime, where it returns approximately $1/N$ regardless of the input logits' relative ordering. Critically, no directional learning occurred alongside this shrinkage: two independently trained models (differing in hidden dimension, learning rate, and training duration --- the HPO-tuned and untuned default configurations of Section~\ref{sec:complexity}) retained embedding directions with cosine similarity exceeding 0.99, differing essentially only by an overall scale factor; rescaling either model's trained embeddings back to their initialization norm reproduces a softmax spread statistically indistinguishable from a fresh random draw. In other words, training rescaled these embeddings without ever rotating them into a task-informed direction --- the surviving direction encodes no more structure than the random initialization did. We attribute this to the interaction between coupled $L_2$ weight decay (Adam with weight\_decay$=10^{-5}$, applied uniformly to all parameters including these embeddings, Section~\ref{sec:impl}), which exerts a constant, sign-consistent force pulling every embedding parameter toward the origin, and a task gradient reaching these specific parameters that is weak by comparison (measured on the order of $10^{-5}$ per element) because a near-uniform adjacency is already a close-to-optimal mean-aggregation operator for this architecture, whose LSTM temporal pathway carries most of the model's predictive signal --- leaving little loss pressure to differentiate edges in the first place. This makes the embedding norm a self-reinforcing attractor toward zero: the task gradient shrinks roughly in proportion to $\|\mathbf{E}\|$ while the decay force stays constant relative to $\|\mathbf{E}\|$, so the ratio between them degrades monotonically once collapse begins, with no mechanism to recover. This finding is independent of model capacity --- it is observed with near-identical severity at both the default (hidden dimension 64) and HPO-tuned (hidden dimension 128) configurations --- and instead tracks training duration (RMS-to-init ratio: 0.92 at epoch 20, 0.47 at epoch 25, 0.031 at epoch 32, 0.012 at epoch 43), consistent with a genuine optimization dynamic rather than an architectural capacity limitation.
+
+Figure~\ref{fig:collapse} makes the two halves of this mechanism visible side by side, using the 19-cell robustness suite of Section~\ref{sec:robustness} rather than the single model discussed above, because that suite is the only place in this study where embedding geometry was measured across many independently trained checkpoints. Panel (a) is the collapse itself: relative embedding magnitude falls across six and a half orders of magnitude, from 33\% of initialization at five epochs of training to $9\times10^{-8}$ of it at thirty-seven, and the descent is orderly rather than configuration-dependent. Panel (b) is the half that makes the finding a diagnosis rather than an observation: over that same span the embeddings' cosine similarity to their own random initialization moves by a single factor of 2.2, from 0.93 to 0.42, and does so as a smooth function of training duration alone. A mechanism that had found task-relevant structure would show the opposite disproportion --- direction moving decisively while magnitude stayed bounded. What the two panels show instead is embeddings shrinking essentially in place.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{../results/archive_paper1/figures/fig6_collapse_mechanism.pdf}
+\caption{The isotropic norm collapse, plotted from the 19 independently trained diagnostic cells of Section~\ref{sec:robustness} (band-count sweep, decomposition comparison, loss comparison, and the five-seed repetition of both graph variants). The horizontal axis is the number of epochs of training embodied in the diagnosed checkpoint, $E$, which ranges from 5 to 37 across the suite. (a) Mean embedding RMS relative to the run's own random initialization, on a logarithmic scale: it falls from $0.331$ at $E=5$ to $9.4\times10^{-8}$ at $E=37$, crossing the diagnostic's $0.5$ collapse threshold (defined against the Xavier reference RMS of $0.2885$, which each run's own initialization matches to within 5.6\% in every band plotted, so the two normalizations are interchangeable at this figure's scale) before the earliest cell in the corrected suite, and continuing monotonically thereafter (Spearman $\rho = -0.993$, $p = 3.4\times10^{-17}$). (b) Mean cosine similarity of the same embeddings to that same initialization, on a linear scale spanning the full $[0,1]$ range: it moves only from $0.927$ to $0.420$ over the identical span, tracking training duration with $\mathrm{cos} = 0.984 - 0.0168\,E$ ($R^2 = 0.965$, $\rho = -0.990$). Marker shape and color identify which robustness axis produced each cell; the axes are visually interleaved, consistent with the absence of any residual axis effect once training duration is known (one-way ANOVA on the fit residuals, $F = 0.791$, $p = 0.518$). Open circles joined by dashed arrows are the three cells whose original best-validation checkpoints had been frozen by early stopping after one to two epochs and were subsequently re-diagnosed from final-epoch weights: these are the same three runs observed twice, and they traverse the same trajectory. Read together, the panels are the paper's central mechanistic claim --- six and a half orders of magnitude of shrinkage against a factor of 2.2 of rotation, the signature of embeddings rescaled toward the origin by weight decay rather than rotated toward task structure by a learning signal. The residual rotation in (b) should not be read as learning: it is confounded with the shrinkage itself, since the cosine is computed on raw embedding vectors whose direction, at magnitudes of $10^{-3}$ and below, is increasingly dominated by accumulated floating-point residue rather than by any gradient --- the gradient reaching these parameters is exactly zero in the three most-trained cells shown.}
+\label{fig:collapse}
+\end{figure*}
 
 Two clarifications about what this failure mode is and is not. It is \emph{not} over-smoothing, nor representational rank collapse in the sense of \citet{RothLiebig2024}: those are depth-driven phenomena in which node \emph{representations} progressively lose rank as message passing iterates, governed by the spectrum of the aggregation operator. The models reported here use one (HPO-tuned, Section~\ref{sec:hpo}) or two (default, Section~\ref{sec:impl}) GAT layers, so the depth precondition for those phenomena is not met, and the collapse we document is in the adjacency-\emph{generating} embedding parameters, upstream of any message passing, with gradients that flow correctly and are merely far too weak. Conflating the two would misattribute an optimization failure to an architectural one. It is, on the other hand, consistent with the theoretical picture of \citet{Fountoulakis2023} (Section~\ref{sec:related}), who show that graph attention's coefficients concentrate on uniform weights whenever the underlying signal is too weak for \emph{any} attention function to separate edges. Our contribution relative to that result is an empirical, mechanistically traced instance of the same degenerate endpoint reached by a different route --- an optimization dynamic acting on a learned bilinear adjacency --- in a financial forecasting setting at $N=8$ nodes.
 
