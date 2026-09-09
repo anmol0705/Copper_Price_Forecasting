@@ -474,16 +474,6 @@ We read this as strengthening, not weakening, the paper's account of the collaps
 \subsection{Robustness Checks: Is the Collapse an Artifact of Our Configuration Choices?}
 \label{sec:robustness}
 
-\noindent\todohl{[TODO --- provisional numbers. The decomposition-method and
-multi-seed results reported below rest on best-validation checkpoints for three
-cells (the EMD arm, the per-band seed-44 run, and the pooled seed-45 run) that
-early-stopped after only one to two real training epochs. A corrected
-re-diagnosis of those three cells from final-epoch rather than best-validation
-weights, using the new diagnose\_final\_epoch code path, is in progress; it will
-replace every highlighted value in this subsection. See
-results/robustness/*\_finalepoch\_fix/. Each affected number below carries its
-own highlighted marker.]}
-
 Section~\ref{sec:collapse}'s adjacency-collapse diagnosis and
 Section~\ref{sec:graphfix}'s failed remedy were both established at a single
 configuration: $K=5$ bands, VMD decomposition, MSE training loss, seed 42, and
@@ -498,71 +488,99 @@ RMS relative to initialization, gradient norm reaching
 $\mathbf{E}^{(1)}_k/\mathbf{E}^{(2)}_k$, and cosine similarity against the run's
 own random initialization) to every one of the 19 trained cells. All 19 cells
 were trained at the tuned configuration of Section~\ref{sec:hpo} with weight
-decay $10^{-5}$, and all 19 completed. Two of the five experiments carry defects
-we disclose in full below rather than repair, for reasons we state; a third
-defect, affecting three individual cells, is the subject of the pending
-re-diagnosis flagged above.
+decay $10^{-5}$, and all 19 completed. Three of the cells were initially
+diagnosed from best-validation checkpoints that early stopping had frozen after
+one to two epochs of training; we identified this, added a code path that
+captures the final-epoch weights alongside the best-validation ones, and re-ran
+those three cells, so every diagnostic value reported below is measured on a
+checkpoint embodying at least five epochs of training. Two of the five
+experiments carry further defects we disclose in full below rather than repair,
+for reasons we state.
 
 \textbf{The collapse is invariant to every axis we varied, and is explained almost
-entirely by one variable we did not intend to vary.} Across all 19 cells, the
-trained graph embeddings' cosine similarity to their own random initialization is
-predicted by the number of epochs of training embodied in the saved checkpoint,
-with Spearman $\rho = -0.990$ ($p = 7.5\times10^{-16}$); the embeddings' RMS
-magnitude relative to initialization gives $\rho = -0.993$ ($p =
-3.4\times10^{-17}$), and the gradient norm reaching them gives $\rho = -0.961$
-($p = 6.8\times10^{-11}$). A linear fit in training epochs explains 97.7\% of the
-variance in cosine-to-initialization, and the residuals from that fit show no
-detectable dependence on which experiment produced the cell (one-way ANOVA across
-the four axes: $F = 0.543$, $p = 0.660$; Kruskal--Wallis $p = 0.638$; largest
-absolute residual 0.043 against a full observed range of 0.420--0.994). Relative
-embedding magnitude falls from 82\% of its initialization value in the
-least-trained cell (one epoch) to $9\times10^{-8}$ of it in the most-trained
-(37 epochs; an absolute embedding RMS of $1.5\times10^{-8}$ against a Xavier
-reference of 0.2885). Put plainly: once one knows how long a checkpoint trained,
+entirely by one variable we did not intend to vary.} Across all 19 cells, each diagnosed on a checkpoint embodying between 5 and 37
+epochs of training, the trained graph embeddings' cosine similarity to their own
+random initialization is predicted by that epoch count with Spearman
+$\rho = -0.990$ ($p = 7.5\times10^{-16}$); the embeddings' RMS magnitude relative
+to initialization gives $\rho = -0.993$ ($p = 3.4\times10^{-17}$), and the
+gradient norm reaching them gives $\rho = -0.957$ ($p = 1.4\times10^{-10}$). A
+linear fit in training epochs explains 96.5\% of the variance in
+cosine-to-initialization ($\mathrm{cos} = 0.984 - 0.0168\,E$), a fit in
+$\log_{10}$ of the relative RMS explains 96.8\%, and the residuals from the
+cosine fit show no detectable dependence on which experiment produced the cell
+(one-way ANOVA across the four axes: $F = 0.791$, $p = 0.518$; Kruskal--Wallis
+$p = 0.543$; largest absolute residual 0.060 against a full observed range of
+0.420--0.927). Relative embedding magnitude falls from 33\% of its
+initialization value in the least-trained cell (five epochs) to
+$9\times10^{-8}$ of it in the most-trained (37 epochs; an absolute embedding RMS
+of $1.5\times10^{-8}$ against a Xavier reference of 0.2885), passing through
+$1.2\times10^{-3}$ at 21 epochs. Put plainly: once one knows how long a checkpoint trained,
 knowing whether it used three bands or nine, VMD or EMD, MSE or MAE, or which of
 five seeds, adds essentially nothing. This is the signature of a process driven by
 the optimizer rather than by the task, consistent with Section~\ref{sec:graphfix}'s
 finding that removing weight decay's pull does not substitute a learning signal
-for it. \todohl{[TODO: these four statistics are computed over all 19 cells,
-including the three pending ones, which supply the entire low-epoch end of the
-regression. Recompute the correlations, the fit and the endpoint after the
-final-epoch re-diagnosis lands.]}
+for it.
 
-\textbf{An early-stopping artifact, and why we report it rather than the verdict
-it produces.} Three of the 19 cells --- the EMD arm, one seed of the per-band
-variant, and one seed of the pooled variant --- are flagged \texttt{NOT
-COLLAPSED} by the automated diagnostic. They are not counterexamples. Our trainer
-saves the best-validation weights but stamps them with the loop's final epoch
-index; because the best-validation save condition and the early stopper's
-improvement condition are the same predicate (a strict improvement on the running
-best, with zero tolerance), and every one of the 19 runs early-stopped well inside
-the 200-epoch budget, the weights actually in a checkpoint are exactly those from
-epoch $(\text{recorded epoch} - 20)$ under the patience of 20 used throughout. For
-these three cells the recorded indices are 0, 1 and 1, and since a full training
-pass precedes each evaluation, their saved weights reflect one to two epochs of
-training against five to thirty-seven in every other cell. They retain 65--82\% of
-their initialization norm, where every other cell retains at most 33\%, falling to
-0.7\% and, in the degenerate Huber arm discussed below, to order $10^{-7}$. They
-have moved, in the same direction as everything else, simply not yet far enough to
-cross the diagnostic's threshold. This is the same artifact we already document
-for \texttt{full\_model\_graphfix} in Section~\ref{sec:graphfix}, recurring here
-in three further cells; we report it because a summary table carrying these
-verdicts without training length would invite the false conclusion that EMD, or a
-particular seed, protects against the collapse.
+\textbf{An early-stopping artifact we detected, corrected, and report because it
+is instructive.} On a first pass, three of the 19 cells --- the EMD arm, one seed
+of the per-band variant, and one seed of the pooled variant --- were flagged
+\texttt{NOT COLLAPSED} by the automated diagnostic. They were not
+counterexamples. Our trainer saves the best-validation weights but stamps them
+with the loop's final epoch index; because the best-validation save condition and
+the early stopper's improvement condition are the same predicate (a strict
+improvement on the running best, with zero tolerance), and every run early-stopped
+well inside the 200-epoch budget, the weights actually in a checkpoint are exactly
+those from epoch $(\text{recorded epoch} - 20)$ under the patience of 20 used
+throughout. For these three cells the recorded indices were 0, 1 and 1, so their
+saved weights embodied one to two epochs of training against five to thirty-seven
+in every other cell, and their verdicts measured training duration rather than any
+property of the axis being varied. We therefore added a diagnostic path that
+retains the final-epoch weights alongside the best-validation ones and re-ran the
+three cells. All three reproduced their original early-stopping trajectory to the
+same final epoch and their original test metrics to within $2\times10^{-6}$
+relative, confirming that the re-diagnosis describes the same run.
 
-Restricting attention to the 16 cells that trained beyond this margin, the
-collapse is observed in \textbf{16 of 16}: at all four band counts, in all three
-loss arms, and at four of the five seeds in each of the two graph variants (a
-different seed is excluded in each). The decomposition axis is the one exception,
-and we state it plainly rather than fold it into the count: EMD contributes only
-a single cell to this suite and that cell is one of the three artifacts, so
-\emph{this suite currently carries no usable evidence about EMD at all}, and the
-VMD-versus-EMD comparison is not yet answered in either direction.
-\todohl{[TODO: once the three cells are re-diagnosed from final-epoch weights,
-restate this coverage claim. If all three collapse, it becomes 19 of 19, both
-decomposition methods and all five seeds in both variants, and this paragraph's
-EMD caveat is withdrawn. If any does not, that is a genuine counterexample and
-must be reported as one.]}
+\textbf{All three collapse once diagnosed on genuinely trained weights.} At 21,
+22 and 22 epochs of training respectively, every band of all three cells is
+flagged collapsed on both of the diagnostic's independent criteria: the fraction
+of surviving adjacency edges within tolerance of $1/N$ is \textbf{1.00 in every
+band of all three}, and embedding RMS has fallen to $6\times10^{-4}$ to
+$1.3\times10^{-3}$ of the Xavier reference. The gradient norm reaching the
+embeddings is \emph{exactly} zero for the EMD and per-band seed-44 cells and
+$2.7\times10^{-22}$ for the pooled seed-45 cell, while the gradient reaching the
+rest of the network is 0.17--0.22 in the same measurement --- a dead graph branch
+inside a live model. The three cells thus provide a within-run confirmation of the
+epoch relationship above that is stronger than any across-run comparison, because
+configuration, seed and training trajectory are all held fixed and only the
+snapshot moves: the same three runs read 0.994, 0.983 and 0.981
+cosine-to-initialization at one to two epochs and 0.613, 0.597 and 0.555 at
+twenty-one to twenty-two. Two further cells re-run as a consistency check, which
+happened to train for 45 and 68 epochs, extend the same trajectory to relative
+embedding magnitudes of $1.4\times10^{-10}$ and $3.2\times10^{-22}$.
+
+We note for completeness that for these three cells the deployed
+(best-validation) checkpoint and the diagnosed (final-epoch) checkpoint are
+different weight sets. This does not soften the finding, because neither state
+contains learned relational structure: at the best-validation snapshot the
+embeddings are statistically indistinguishable from their random initialization
+(cosine 0.98--0.99, 65--82\% of initialization norm), and at the final-epoch
+snapshot they are uniform with no gradient. The choice between the two is a choice
+between random and uniform.
+
+With the correction in place, the collapse is observed in \textbf{19 of 19}
+runs, each diagnosed at a checkpoint embodying at least five epochs of training:
+at all four band counts, in both decomposition methods, in all three loss arms,
+and at all five seeds in each of the two graph variants. We state the epoch
+qualifier because it is load-bearing: the three re-diagnosed cells are the same
+runs whose one-to-two-epoch snapshots read \texttt{NOT COLLAPSED}, so what this
+suite establishes is not that the collapse is present at every epoch count, but
+that it is present in every run once as few as five epochs have elapsed, and that
+no axis we varied delays or prevents it. The
+decomposition-axis caveat we previously stated is withdrawn --- EMD does not
+resist the collapse, and in fact, having trained ten epochs longer than the VMD
+cell, sits further along the identical trajectory (relative embedding magnitude
+$1.2\times10^{-3}$ against VMD's $6.1\times10^{-2}$, and adjacency uniform to
+within $3\times10^{-8}$ against VMD's $8\times10^{-5}$).
 
 \textbf{Accuracy differences across these axes are smaller than run-to-run noise.}
 Four of the 19 cells are, by construction, the identical configuration ($K=5$,
@@ -602,11 +620,13 @@ seeds. This strengthens rather than weakens Section~\ref{sec:discussion}'s
 negative answer to RQ1, and we note that the parameter-matched version of this
 comparison is one this paper retracts on independent grounds in
 Section~\ref{sec:constantforecast}, so there is no live claim here that the
-capacity mismatch could undermine. \todohl{[TODO: two of the ten multi-seed
-cells (per-band seed 44, pooled seed 45) are among the three pending
-re-diagnoses. Their accuracy metrics and the paired tests above are unaffected,
-but their collapse verdicts are, and the per-seed collapse coverage stated above
-will need updating.]}
+capacity mismatch could undermine. Two of the ten multi-seed cells (per-band
+seed 44, pooled seed 45) are among the three re-diagnosed from final-epoch
+weights described above. Both re-ran to the same final epoch as originally
+recorded and reproduced their test metrics to within $10^{-8}$ absolute, so the
+paired tests reported here are unchanged; only their collapse verdicts change,
+from \texttt{NOT COLLAPSED} to \texttt{COLLAPSED}, which is what brings the
+per-seed coverage to all five seeds in both variants.
 
 \textbf{The loss comparison tested two losses, not three.} We configured MSE, MAE
 and Huber arms. The Huber arm used PyTorch's \texttt{smooth\_l1\_loss} at its
@@ -727,7 +747,7 @@ We enumerate the limitations of this study's design explicitly, rather than defe
     \item \textbf{Directional accuracy is not interpretable without a sign-concentration and majority-class-null check, and this paper's own earlier drafts did not apply one.} Section~\ref{sec:constantforecast} documents that at least two models evaluated in this study (\texttt{pooled\_graph\_graphfix} and \texttt{pooled\_graph\_matched\_params\_tuned}) emit near-constant, near-zero-variance forecasts whose directional accuracy exactly reproduces the test period's unconditional class frequency at each horizon rather than reflecting real directional skill, and that this artifact was responsible for an apparent reversal of this paper's central ablation finding that we have since retracted (Section~\ref{sec:confound-tuned}). We did not archive per-sample prediction arrays for every ablation and confound-check variant, so we cannot directly check prediction dispersion or sign concentration for every reported DA figure; where those raw arrays are unavailable, we instead applied the base-rate-identity half of the check (DA value against the test period's class frequency, Section~\ref{sec:constantforecast}) to every cell of the untuned ablation table (Table~\ref{tab:ablation}) directly, since that check requires only the DA figure and the known class frequencies and not the underlying predictions. This found six confirmed artifact cells, marked in Table~\ref{tab:ablation} (Section~\ref{sec:ablation-results}); RMSE/MAE comparisons, which are not subject to the same constant-forecast artifact, should still be weighted more heavily than DA comparisons wherever the two are in tension.
     \item \textbf{Multiple testing across 24 significance tests.} The baseline comparison runs 24 Diebold-Mariano tests (six baselines $\times$ four horizons); we apply a Holm-Bonferroni correction at family-wise $\alpha=0.05$ (Section~\ref{sec:experiments}), which reduces the significant count from 12 to 8 (all favoring VMD-MFGNN) and removes the one significant result favoring a baseline (XGBoost at $h=1$). We report both raw and corrected significance in Table~\ref{tab:dm} rather than only the more favorable raw count.
     \item \textbf{Single-seed main and ablation results; seed variance characterized only in a separate robustness run.} Every number in Table~\ref{tab:main}, Table~\ref{tab:dm}, Table~\ref{tab:ablation} and Table~\ref{tab:confound-tuned} comes from a single training run per model/variant and should be read as a point estimate rather than as characterizing a distribution; we did not repeat those runs across seeds. Seed-to-seed variance \emph{is} characterized, but only for the two variants carrying RQ1 and only at the tuned configuration, in the five-seed robustness experiment of Section~\ref{sec:robustness}, where the per-band model's test average MSE has a coefficient of variation of 1.32\% across seeds. That experiment additionally established a larger and more troubling figure: four cells at a genuinely identical configuration and identical seed, differing only in which experiment driver launched them, span 7.54\% in test average MSE. Run-to-run nondeterminism at this data scale therefore exceeds every architectural axis effect this study measured, which is the correct scale against which to read any single-run difference reported in the tables above.
-    \item \textbf{Three robustness cells are diagnosed from barely-trained checkpoints, and a corrected re-diagnosis is pending.} Section~\ref{sec:robustness} discloses that three of its 19 diagnostic cells (the EMD arm, the per-band seed-44 run, and the pooled seed-45 run) early-stopped such that their saved best-validation weights embody only one to two epochs of training, so their automated ``not collapsed'' verdicts measure training duration rather than any property of the axis being varied. We report them as unusable rather than as counterexamples, and the collapse claim in that section is stated over the 16 cells that trained beyond that margin. The practical consequence is that the decomposition axis carries no usable evidence at present, since EMD contributes exactly one cell to the suite. \todohl{[TODO: a re-run diagnosing these three cells from final-epoch rather than best-validation weights is in progress; update this item, and the highlighted values in the robustness subsection, once it completes.]}
+    \item \textbf{Three robustness cells were initially diagnosed from barely-trained checkpoints; the diagnosis has been corrected and we report the correction rather than suppress it.} Three of Section~\ref{sec:robustness}'s 19 diagnostic cells (the EMD arm, the per-band seed-44 run, and the pooled seed-45 run) early-stopped such that their saved best-validation weights embodied only one to two epochs of training, so their automated ``not collapsed'' verdicts measured training duration rather than any property of the axis being varied. We added a diagnostic path that retains each run's final-epoch weights alongside its best-validation weights and re-ran those three cells; all three reproduced their original trajectories to the same final epoch and their original test metrics to within $2\times10^{-6}$ relative, and all three are collapsed when diagnosed at 21--22 epochs of training, with every band's surviving adjacency edges uniform to within tolerance of $1/N$ and the gradient reaching the graph embeddings exactly zero or of order $10^{-22}$. The collapse claim in that section is therefore stated over 19 of 19 runs, each diagnosed at a checkpoint embodying at least five epochs of training, rather than over 16 of 16 with three cells set aside; the qualifier matters, since the three re-diagnosed runs are the same ones whose one-to-two-epoch snapshots read ``not collapsed'', so what the suite establishes is that the collapse appears in every run within a few epochs and that no axis we varied delays it, not that it is present at every epoch count. The decomposition axis now carries usable evidence in both directions. Two residual caveats remain. First, for these three cells the deployed best-validation checkpoint and the diagnosed final-epoch checkpoint are different weight sets; we did not measure the final-epoch weights' test accuracy, and we rest the claim on the observation that neither snapshot contains learned relational structure --- the earlier one is indistinguishable from random initialization (cosine 0.98--0.99 to its own init) and the later one is uniform with no gradient. Second, the decomposition axis still rests on a single cell per method, so it establishes that EMD does not \emph{avoid} the collapse but does not support any accuracy comparison between the two decompositions.
     \item \textbf{Asymmetric hyperparameter optimization interacts with, but does not explain, the naive-baseline result.} The HPO asymmetry disclosed above (item 7) means the main-table comparison among the seven fitted models is not a fully controlled architecture comparison. It does not, however, offer an explanation for why every model, tuned or not, fails to beat the naive zero-forecast baseline on MAE (Section~\ref{sec:main-results}): additional tuning of the baselines would be expected to narrow gaps \emph{among} the seven fitted models, not to change whether any of them exceeds a baseline that requires no tuning at all.
 \end{enumerate}
 
