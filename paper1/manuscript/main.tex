@@ -125,7 +125,32 @@ For commodities specifically, the literature is sparse. \citet{Sun2025} proposed
 
 A small number of papers combine VMD with GNN, mostly outside finance: traffic forecasting \citep{Ahmad2024, Ahmad2025}, air quality \citep{Pei2022}, wind energy \citep{ChengTsai2026, Bao2025}, and industrial applications \citep{Yuan2025}. Within finance, \citet{LiLiu2026} (``MBTI-Net'') combines VMD decomposition with a GNN for copper futures price forecasting; this is the closest prior work to ours and rules out any claim of being first to combine VMD and GNNs for copper. Critically, MBTI-Net pools the decomposed VMD modes into a single unified graph before applying graph convolution---the graph topology does not vary across frequency bands. \citet{ZhengZhufu2025} combine DCT (not VMD) with a cross-scale GNN for single-stock prediction, not multi-commodity relational modeling.
 
-The gap we target is therefore precise: among work that combines signal decomposition with graph-based relational modeling for commodity or financial time series, we are not aware of any that constructs a \emph{separate} graph per decomposed frequency band across a multi-commodity system, as opposed to (a) pooling bands into one graph (MBTI-Net) or (b) using a single graph over undecomposed data (Sun et al., 2025). We do not claim priority over VMD+GNN combinations generally, nor over GNN applications to copper generally. More importantly, we do not simply assert that the per-band choice is an improvement over MBTI-Net-style pooling and leave it there: we treat it as an empirical question MBTI-Net's architecture implicitly answers one way (pooling is sufficient) without testing the alternative, and we test both sides of that question directly, against a matched pooled-graph baseline (Section~\ref{sec:ablation}), at the same data scale. Our result complicates a straightforward reading of MBTI-Net's design choice: we find no ablation evidence that per-band graphs outperform pooling, and we go further than reporting that negative comparison by diagnosing \emph{why} it comes out this way---the per-band graph-learning mechanism in our model collapsed to near-uniform edge weights during training (Section~\ref{sec:collapse}), a specific, quantified failure mode that, to our knowledge, has not previously been documented for this class of learned-adjacency GNN architecture at low node counts. It is not, however, without precedent, and we do not present it as unanticipated: \citet{Fountoulakis2023} prove, and confirm on both synthetic and real graphs, that in a low signal-to-noise (``hard'') regime of the contextual stochastic block model, a graph attention network's coefficients concentrate on uniform $1/|\mathcal{N}_i|$ weights, so the attention mechanism reduces to ordinary mean-aggregating graph convolution and cannot distinguish important from unimportant edges. Their setting is attention over a \emph{given} graph in node classification, and their mechanism is the statistical indistinguishability of intra- from inter-class edges rather than an optimization dynamic; ours is a \emph{learned} bilinear adjacency in a forecasting model, degenerating for a different, traceable reason (Section~\ref{sec:collapse}). The qualitative endpoint --- graph attention collapsing to uniform weights when there is too little signal to differentiate edges --- is nonetheless the same, which we take as corroborating rather than diminishing the finding. This does not establish that MBTI-Net's own pooled graph suffers the same failure---we did not have access to retrain or inspect MBTI-Net's checkpoints---but it is a concrete, mechanistic reason to be skeptical that per-band-versus-pooled is a distinction that reliably matters at this problem scale, and a more informative contribution to that specific architectural question than either an unexamined win or an unexamined loss would be.
+The gap we target is therefore precise: among work that combines signal decomposition with graph-based relational modeling for commodity or financial time series, we are not aware of any that constructs a \emph{separate} graph per decomposed frequency band across a multi-commodity system, as opposed to (a) pooling bands into one graph (MBTI-Net) or (b) using a single graph over undecomposed data (Sun et al., 2025). Table~\ref{tab:related} makes this positioning checkable against the most directly comparable prior work discussed above, rather than only argued in prose. We do not claim priority over VMD+GNN combinations generally, nor over GNN applications to copper generally.
+
+\begin{table}[t]
+\centering
+\caption{Positioning against the most directly comparable prior work. ``Per-band graph'' means a separate learned adjacency per frequency/scale component; ``pooled/single'' means one graph shared across components or over undecomposed data.}
+\label{tab:related}
+\small
+\begin{tabular}{@{}p{1.75cm}cp{2.3cm}p{1.65cm}@{}}
+\toprule
+Work & Decomp.? & Graph & Domain \\
+\midrule
+VMD-LSTM \citep{Liu2020} & VMD & --- & metals (univar.) \\
+MTGNN \citep{Wu2020mtgnn} & --- & learned, single & multiv.\ TS \\
+StemGNN \citep{Cao2020} & spectral & learned, single & multiv.\ TS \\
+FourierGNN \citep{Yi2023} & Fourier & learned, single & multiv.\ TS \\
+THGNN \citep{Xiang2023} & --- & dynamic, single & stocks \\
+MDGNN \citep{Qian2024} & --- & multi-relational & stocks \\
+Sun et al.\ \citeyear{Sun2025} & --- & single, undecomp. & copper \\
+Hu et al.\ \citeyear{Hu2023} & --- & heterog., single & futures (49) \\
+Zhai et al.\ \citeyear{Zhai2024} & Fourier & learned, single & base metals \\
+Zheng \& Zhufu \citeyear{ZhengZhufu2025} & DCT & cross-scale, single & single stock \\
+MBTI-Net \citep{LiLiu2026} & VMD & \textbf{pooled} & copper \\
+\textbf{This work} & VMD & \textbf{per-band ($K{=}5$)} & copper (multi.) \\
+\bottomrule
+\end{tabular}
+\end{table} More importantly, we do not simply assert that the per-band choice is an improvement over MBTI-Net-style pooling and leave it there: we treat it as an empirical question MBTI-Net's architecture implicitly answers one way (pooling is sufficient) without testing the alternative, and we test both sides of that question directly, against a matched pooled-graph baseline (Section~\ref{sec:ablation}), at the same data scale. Our result complicates a straightforward reading of MBTI-Net's design choice: we find no ablation evidence that per-band graphs outperform pooling, and we go further than reporting that negative comparison by diagnosing \emph{why} it comes out this way---the per-band graph-learning mechanism in our model collapsed to near-uniform edge weights during training (Section~\ref{sec:collapse}), a specific, quantified failure mode that, to our knowledge, has not previously been documented for this class of learned-adjacency GNN architecture at low node counts. It is not, however, without precedent, and we do not present it as unanticipated: \citet{Fountoulakis2023} prove, and confirm on both synthetic and real graphs, that in a low signal-to-noise (``hard'') regime of the contextual stochastic block model, a graph attention network's coefficients concentrate on uniform $1/|\mathcal{N}_i|$ weights, so the attention mechanism reduces to ordinary mean-aggregating graph convolution and cannot distinguish important from unimportant edges. Their setting is attention over a \emph{given} graph in node classification, and their mechanism is the statistical indistinguishability of intra- from inter-class edges rather than an optimization dynamic; ours is a \emph{learned} bilinear adjacency in a forecasting model, degenerating for a different, traceable reason (Section~\ref{sec:collapse}). The qualitative endpoint --- graph attention collapsing to uniform weights when there is too little signal to differentiate edges --- is nonetheless the same, which we take as corroborating rather than diminishing the finding. This does not establish that MBTI-Net's own pooled graph suffers the same failure---we did not have access to retrain or inspect MBTI-Net's checkpoints---but it is a concrete, mechanistic reason to be skeptical that per-band-versus-pooled is a distinction that reliably matters at this problem scale, and a more informative contribution to that specific architectural question than either an unexamined win or an unexamined loss would be.
 
 %% ============================================================
 \section{Methodology}
@@ -133,7 +158,33 @@ The gap we target is therefore precise: among work that combines signal decompos
 
 \subsection{Problem Formulation}
 
-Given $N=8$ multivariate time series $\{\mathbf{x}_1, \ldots, \mathbf{x}_N\}$ representing copper price and related commodity/macroeconomic variables, we aim to forecast the copper price return $r_{t+h} = \ln(p_{t+h}/p_t)$ at horizons $h \in \{1, 5, 10, 22\}$ trading days, using a lookback window of $L$ timesteps.
+Given $N=8$ multivariate time series $\{\mathbf{x}_1, \ldots, \mathbf{x}_N\}$ representing copper price and related commodity/macroeconomic variables, we aim to forecast the copper price return $r_{t+h} = \ln(p_{t+h}/p_t)$ at horizons $h \in \{1, 5, 10, 22\}$ trading days, using a lookback window of $L$ timesteps. Table~\ref{tab:notation} collects the symbols used across this section and Sections~\ref{sec:collapse} and~\ref{sec:robustness}, since the notation is dense enough that we found it worth fixing in one place rather than only at each symbol's first use.
+
+\begin{table}[t]
+\centering
+\caption{Notation used in Sections~\ref{sec:method}, \ref{sec:collapse}, and \ref{sec:robustness}.}
+\label{tab:notation}
+\small
+\begin{tabular}{@{}lp{6.3cm}@{}}
+\toprule
+Symbol & Meaning (fixed value in this paper) \\
+\midrule
+$N$ & number of input variables ($N=8$) \\
+$K$ & number of VMD frequency bands ($K=5$; swept $\{3,5,7,9\}$ in Section~\ref{sec:robustness}) \\
+$L$ & lookback window length ($L=60$ trading days) \\
+$T$ & total series length (lookback timestep index range) \\
+$d$ & graph-embedding dimension ($d=16$, fixed, not HPO-searched) \\
+$d_h$ & hidden dimension (64 default; 32/64/128 HPO-searched) \\
+$H$ & number of GAT attention heads (4 default; 2/4/8 HPO-searched) \\
+top-$k$ & per-row adjacency sparsification budget ($k=4$ of $N=8$) \\
+$\mathcal{H}$ & forecast horizon set, $\{1,5,10,22\}$ trading days \\
+$\mathbf{A}_k$ & learned adjacency matrix for band $k$ \\
+$\mathbf{E}^{(1)}_k,\mathbf{E}^{(2)}_k$ & bilinear graph-embedding matrices for band $k$, $\in\mathbb{R}^{N\times d}$ \\
+$\mathbf{z}^{(k)}$ & band-$k$ representation after GAT+LSTM \\
+$w_k$ & attention-fusion weight for band $k$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Variational Mode Decomposition}
 
@@ -247,7 +298,16 @@ Within the ablation study, capacity is controlled two ways for the no-VMD and po
 
 We use daily data from January 2010 to December 2025, sourced entirely from Yahoo Finance (no FRED, BDI, TC/RC, or COT data are used). The target variable is COMEX copper futures (HG=F). Input variables ($N=8$) are: copper (HG=F), aluminum (ALI=F), gold (GC=F), crude oil / WTI (CL=F), US Dollar Index (DX-Y.NYB), S\&P 500 (\^{}GSPC), VIX (\^{}VIX), and the US 10-year Treasury yield (\^{}TNX). Zinc and nickel were originally in scope, sourced via NASDAQ commodity sub-index proxies (\^{}NQCIZNER for zinc, \^{}NQCINIER for nickel) since neither has a standalone Yahoo Finance futures contract (both are LME-only instruments). On the live production data pull for this study's date range, both proxy tickers were confirmed dead/delisted (\texttt{yfinance} raised \texttt{YFPricesMissingError}), with no further viable Yahoo Finance substitute identified. Zinc and nickel were therefore removed from the locked scope entirely, rather than replaced with a different proxy---a deliberate, disclosed reduction from an originally planned 10-variable scope to the 8-variable scope reported throughout this paper, discussed further in Section~\ref{sec:limitations}.
 
-\textbf{Split.} A single chronological train/validation/test split is used: training (2010--2019), validation (2020--2021, includes COVID), test (2022--2025, includes supply shocks, rate hikes, and green-transition demand effects). This is \emph{not} a walk-forward or rolling-origin evaluation with multiple folds; the implications for statistical testing are discussed in Section~\ref{sec:limitations}.
+\textbf{Trading-calendar alignment.} COMEX copper futures, the S\&P 500, CBOE VIX, and the US 10-year yield do not share an identical exchange holiday calendar. The eight downloaded series are joined on the union of their trading days, forward-filled for gaps of up to 5 trading days (\texttt{ffill(limit=5)}, covering the isolated single-exchange holidays and short data-vendor gaps this scope exhibits), and any row still containing a missing value after that limited fill is dropped rather than filled further. This keeps every reported day's feature vector either a genuine same-day quote or a short, bounded carry-forward, never an unbounded stale value, and applies identically to training, validation, and test data.
+
+\textbf{Split.} A single chronological train/validation/test split is used: training (2010--2019), validation (2020--2021, includes COVID), test (2022--2025, includes supply shocks, rate hikes, and green-transition demand effects). This is \emph{not} a walk-forward or rolling-origin evaluation with multiple folds; the implications for statistical testing are discussed in Section~\ref{sec:limitations}. Figure~\ref{fig:datasplit} shows this split on a timeline.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../results/archive_paper1/figures/fig_data_split_timeline.pdf}
+\caption{The single chronological train/validation/test split used throughout this paper, with the named regime events inside each window (Section~\ref{sec:limitations}). The split is not walked forward or resampled; this figure makes exactly what one split covers inspectable at a glance.}
+\label{fig:datasplit}
+\end{figure}
 
 \subsection{Baselines}
 \label{sec:baselines}
@@ -257,7 +317,24 @@ We compare VMD-MFGNN against six baselines: ARIMA, XGBoost, LSTM, Transformer, V
 \subsection{Hyperparameter Optimization}
 \label{sec:hpo}
 
-VMD-MFGNN, the proposed model, is tuned via a lightweight Optuna study (TPE sampler with a median pruner), searching hidden dimension $\in \{32,64,128\}$, number of attention heads $\in \{2,4,8\}$ (constrained so hidden dimension is divisible by the head count), learning rate (log-uniform, $10^{-4}$ to $10^{-2}$), dropout (uniform, 0.05 to 0.3), and number of GNN layers $\in \{1,2,3\}$, configured for up to 15 trials of 25 epochs each. In the run reported in this paper, the study completed 10 of the configured 15 trials (5 \texttt{COMPLETE}, 5 \texttt{PRUNED} by the median pruner before completing their allotted epochs) before the search budget was exhausted; we report the true trial count rather than the configured one. The best trial (validation MSE $= 0.002051$) selected \textbf{hidden dimension $=128$, attention heads $=2$, learning rate $\approx 0.00153$, dropout $\approx 0.0616$, GNN layers $=1$}. This configuration is used for VMD-MFGNN throughout the main results (Table~\ref{tab:main}) and significance testing (Table~\ref{tab:dm}); it is \emph{not} used in the ablation study (Section~\ref{sec:ablation}), which fixes all variants, including its own \texttt{full\_model} row, at the untuned default configuration (Section~\ref{sec:impl}) instead. The six baselines are \emph{not} tuned; they run at standard/hardcoded settings. This asymmetry is a deliberate, disclosed methodological choice rather than an oversight: tuning all seven models under a full hyperparameter search would multiply compute cost roughly by the trial count and was judged infeasible within this project's compute and time budget, and tuning only the proposed model against standard baselines is common, defensible practice in comparison papers under such constraints, provided it is disclosed (Section~\ref{sec:limitations}). HPO results (best parameters and the full trial history, including pruned trials) are saved for reproducibility.
+VMD-MFGNN, the proposed model, is tuned via a lightweight Optuna study (TPE sampler with a median pruner), searching hidden dimension $\in \{32,64,128\}$, number of attention heads $\in \{2,4,8\}$ (constrained so hidden dimension is divisible by the head count), learning rate (log-uniform, $10^{-4}$ to $10^{-2}$), dropout (uniform, 0.05 to 0.3), and number of GNN layers $\in \{1,2,3\}$, configured for up to 15 trials of 25 epochs each. Table~\ref{tab:hpo-space} tabulates this search space alongside the selected best trial. In the run reported in this paper, the study completed 10 of the configured 15 trials (5 \texttt{COMPLETE}, 5 \texttt{PRUNED} by the median pruner before completing their allotted epochs) before the search budget was exhausted; we report the true trial count rather than the configured one. The best trial (validation MSE $= 0.002051$) selected \textbf{hidden dimension $=128$, attention heads $=2$, learning rate $\approx 0.00153$, dropout $\approx 0.0616$, GNN layers $=1$}. This configuration is used for VMD-MFGNN throughout the main results (Table~\ref{tab:main}) and significance testing (Table~\ref{tab:dm}); it is \emph{not} used in the ablation study (Section~\ref{sec:ablation}), which fixes all variants, including its own \texttt{full\_model} row, at the untuned default configuration (Section~\ref{sec:impl}) instead. The six baselines are \emph{not} tuned; they run at standard/hardcoded settings. This asymmetry is a deliberate, disclosed methodological choice rather than an oversight: tuning all seven models under a full hyperparameter search would multiply compute cost roughly by the trial count and was judged infeasible within this project's compute and time budget, and tuning only the proposed model against standard baselines is common, defensible practice in comparison papers under such constraints, provided it is disclosed (Section~\ref{sec:limitations}). HPO results (best parameters and the full trial history, including pruned trials) are saved for reproducibility.
+
+\begin{table}[t]
+\centering
+\caption{Main Optuna search space (Section~\ref{sec:hpo}) and the selected best trial (validation MSE $=0.002051$, 10 of 15 configured trials completed: 5 \texttt{COMPLETE}, 5 \texttt{PRUNED}).}
+\label{tab:hpo-space}
+\begin{tabular}{lll}
+\toprule
+Hyperparameter & Search space & Best trial \\
+\midrule
+hidden dim.\ $d_h$ & $\{32, 64, 128\}$ & 128 \\
+attention heads $H$ & $\{2, 4, 8\}$ & 2 \\
+learning rate & log-U$(10^{-4}, 10^{-2})$ & $\approx 0.00153$ \\
+dropout & U$(0.05, 0.3)$ & $\approx 0.0616$ \\
+GNN layers & $\{1, 2, 3\}$ & 1 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Ablation Studies}
 \label{sec:ablation}
@@ -286,12 +363,14 @@ For the baseline comparison (VMD-MFGNN versus each of the six baselines, Section
 
 \subsection{Evaluation Metrics}
 
-RMSE, MAE, and Directional Accuracy (DA) are reported for the main comparison and the ablations, per horizon.
+RMSE, MAE, and Directional Accuracy (DA) are reported for the main comparison and the ablations, per horizon. DA is computed as $\text{mean}(\text{sign}(r_{t+h}) = \text{sign}(\hat r_{t+h})) \times 100$; we state the zero-return convention this implies explicitly, since it is only ever otherwise visible deep inside a Section~\ref{sec:results} discussion. NumPy's \texttt{sign} returns exactly $0$ for an exactly-zero input, so a true return of exactly zero counts as a directional hit only on the practically-never-occurring event that the model's continuous-valued prediction is also exactly $0.0$; in every other case, including every ordinary nonzero prediction, an exactly-zero true return counts as a miss. This is a fixed, mechanical consequence of the sign-comparison formula, not a design choice made specifically for this paper, and it is applied identically to every model and every table in this paper.
 
 \subsection{Implementation Details}
 \label{sec:impl}
 
-VMD-MFGNN and all baselines are implemented in PyTorch with PyTorch Geometric for the GAT layers. Default (pre-HPO) architecture hyperparameters are: hidden dimension 64, 4 attention heads, 2 GNN layers, 2 LSTM layers, dropout 0.1, lookback window $L=60$ trading days; training uses batch size 32, the Adam optimizer with learning rate $10^{-3}$ and coupled $L_2$ weight decay $10^{-5}$ applied uniformly to all parameters (including the graph-embedding parameters discussed in Section~\ref{sec:collapse}), and early stopping. Best-validation-loss checkpoint selection was used for all reported models, with model weights saved to disk so that training can resume from a checkpoint rather than restart from scratch.
+VMD-MFGNN and all baselines are implemented in PyTorch with PyTorch Geometric for the GAT layers. Default (pre-HPO) architecture hyperparameters are: hidden dimension 64, 4 attention heads, 2 GNN layers, 2 LSTM layers, embedding dimension $d=16$ for the bilinear graph embeddings $\mathbf{E}^{(1)}_k,\mathbf{E}^{(2)}_k$ of Eq.~\ref{eq:graph} (fixed, not part of the HPO search space of Section~\ref{sec:hpo}, so it is identical across the default and HPO-tuned configurations), dropout 0.1, lookback window $L=60$ trading days; training uses batch size 32, the Adam optimizer with learning rate $10^{-3}$ and coupled $L_2$ weight decay $10^{-5}$ applied uniformly to all parameters (including the graph-embedding parameters discussed in Section~\ref{sec:collapse}), and early stopping. Best-validation-loss checkpoint selection was used for all reported models, with model weights saved to disk so that training can resume from a checkpoint rather than restart from scratch.
+
+\textbf{Environment.} Training was run on Google Colab with a single NVIDIA T4 GPU (paid compute-unit tier, not the free tier). Package versions are pinned only as lower bounds in the project's \texttt{requirements.txt} (PyTorch $\geq$2.0, PyTorch Geometric $\geq$2.4, Optuna $\geq$3.0); we did not additionally freeze exact resolved versions for this run, which we note here as a reproducibility gap rather than omit silently. Given the dataset scale ($N=8$ series, $\sim$4{,}000 trading days), a single VMD-MFGNN training run completes in low single-digit minutes on this hardware; we did not instrument and log per-run wall-clock time precisely enough to report a more exact figure for every one of this paper's model/variant combinations, and state that limitation explicitly rather than back-fill an estimate.
 
 %% ============================================================
 \section{Results and Discussion}
@@ -304,7 +383,7 @@ All numbers below are computed on the test split (2022--2025) and read directly 
 
 Table~\ref{tab:main} reports RMSE, MAE, and Directional Accuracy (DA) for VMD-MFGNN and the six baselines, across all four forecast horizons, together with a trivial \textbf{zero-forecast (random-walk) baseline} that predicts $\hat r_{t+h}=0$ for every sample. We add this row because it is the single most important context for reading the rest of this table, and because omitting it, as much of the decomposition-ensemble and GNN-for-finance literature does, risks presenting a ranking among models that all fail a more basic test. For a zero forecast, RMSE reduces to the standard deviation of the true returns and MAE to their mean absolute value, computed directly from the saved test-set target arrays (identical across all seven models since they share one test set).
 
-\begin{table*}[!t]
+\begin{table*}[!tb]
 \centering
 \caption{Forecasting performance comparison across four horizons, test split (2022--2025). Best result per column shown in \textbf{bold}. VMD-MFGNN is the HPO-tuned model (Section~\ref{sec:hpo}); the six baselines are untuned. $^{\ddagger}$Transformer's $h=5$ DA is a confirmed base-rate artifact: its predictions are 100\% positive-sign and this DA value exactly equals the test period's up-day frequency, not a measurement of directional skill; see the sign-concentration diagnostic in Section~\ref{sec:constantforecast}.}
 \label{tab:main}
@@ -332,7 +411,26 @@ Unconditional up-day freq.\ (\%) & \multicolumn{4}{c}{} & \multicolumn{4}{c}{} &
 \end{table*}
 \FloatBarrier
 
-Table~\ref{tab:main} makes the central finding of this paper visible in one place: \textbf{the naive zero-forecast baseline wins MAE at all four horizons and RMSE at two of four horizons ($h=1$ and $h=22$), against every one of the seven fitted models, including VMD-MFGNN.} No model beats it on MAE anywhere in the table; VMD-MFGNN and XGBoost each beat it on RMSE at one horizon ($h=5$ and $h=10$ respectively), and nowhere else does any model do better than predicting zero return. All seven models' $R^2$ values are negative or approximately zero on this test split (not tabulated here for space, computed identically to RMSE/MAE from the same saved arrays), consistent with none of them explaining variance beyond what a constant forecast already captures. DA tells a related story once read against the correct null: the relevant baseline for DA is not 50\% but the test period's own unconditional up-day frequency, which is 51.0\%, 53.0\%, 55.4\%, and 55.3\% at $h=1,5,10,22$ respectively (bottom row) --- itself a symptom of the strong upward drift copper exhibited over 2022--2025. The complementary down-day frequencies are 48.37\%, 46.95\%, 44.21\%, and 44.72\% (they do not sum to exactly 100\% with the up-day figures because a small number of test days record an exactly zero return); we state them explicitly because the base-rate-identity checks reported below and in Section~\ref{sec:ablation-results} are made against whichever of the two frequencies matches the sign a degenerate model emits, and a reader cannot otherwise verify those flags from the table alone. VMD-MFGNN's headline $h=1$ DA of 52.5\% is only 1.5 percentage points above that null, and at $h=5,10,22$ no model in this table, including VMD-MFGNN, exceeds the unconditional up-day frequency at all. We read this table as showing that this study's seven fitted models, including the proposed one, are best understood as a ranking among approaches that do not clearly outperform doing nothing, rather than as a demonstration that any of them, including VMD-MFGNN, has found exploitable structure in copper returns at this data scale. Section~\ref{sec:results-dm} still reports pairwise significance among the seven fitted models, since that question --- do these models differ meaningfully from one another --- is separate from, and does not resolve, the more basic question this section answers in the negative. We applied this paper's own base-rate-identity check (Section~\ref{sec:constantforecast}) to every cell of this table directly, loading all 28 saved prediction arrays and checking both the fraction of predictions sharing the majority sign and whether DA exactly equals the test period's class frequency: exactly one cell qualifies, Transformer at $h=5$ (100\% positive-sign predictions, DA=53.05\% identical to the up-day frequency to four decimal places, marked $^{\ddagger}$ above). Transformer's $h=22$ DA (44.72\%) also happens to numerically equal the down-day frequency at that horizon, but this is a coincidental count match, not the same artifact: only 89.4\% of its predictions are negative-sign and its prediction standard deviation is a healthy fraction of the true-return standard deviation, so we do not flag it. No other cell in this table shows either signature.
+Table~\ref{tab:main} makes the central finding of this paper visible in one place: \textbf{the naive zero-forecast baseline wins MAE at all four horizons and RMSE at two of four horizons ($h=1$ and $h=22$), against every one of the seven fitted models, including VMD-MFGNN.} No model beats it on MAE anywhere in the table; VMD-MFGNN and XGBoost each beat it on RMSE at one horizon ($h=5$ and $h=10$ respectively), and nowhere else does any model do better than predicting zero return. All seven models' $R^2$ values are negative or approximately zero on this test split, consistent with none of them explaining variance beyond what a constant forecast already captures; Table~\ref{tab:r2} reports them in full, since RQ0 is load-bearing enough to this paper's framing that we do not leave its supporting statistic as an unlabeled aside.
+
+\begin{table}[t]
+\centering
+\caption{$R^2$ by model and horizon, test split (2022--2025), computed identically to RMSE/MAE (Table~\ref{tab:main}) from the same saved prediction arrays. Best (least negative, or positive) per column shown in \textbf{bold}. All values are negative or approximately zero: no model explains test-set variance beyond a constant (zero) forecast.}
+\label{tab:r2}
+\begin{tabular}{lrrrr}
+\toprule
+Model & $h$=1 & $h$=5 & $h$=10 & $h$=22 \\
+\midrule
+ARIMA & $-$0.0396 & $-$0.0196 & $-$0.0120 & \textbf{$-$0.0071} \\
+XGBoost & $-$0.0121 & $-$0.0009 & \textbf{0.0014} & $-$0.0198 \\
+LSTM & $-$0.1638 & $-$0.0856 & $-$0.2064 & $-$0.2120 \\
+Transformer & $-$0.6752 & $-$0.5307 & $-$0.0879 & $-$0.9302 \\
+VMD-LSTM & $-$5.4306 & $-$0.3158 & $-$0.3349 & $-$0.6086 \\
+SimpleMTGNN & $-$0.0930 & $-$10.3659 & $-$0.4616 & $-$0.6640 \\
+VMD-MFGNN & $-$0.0651 & \textbf{0.0041} & $-$0.0030 & $-$0.0747 \\
+\bottomrule
+\end{tabular}
+\end{table} DA tells a related story once read against the correct null: the relevant baseline for DA is not 50\% but the test period's own unconditional up-day frequency, which is 51.0\%, 53.0\%, 55.4\%, and 55.3\% at $h=1,5,10,22$ respectively (bottom row) --- itself a symptom of the strong upward drift copper exhibited over 2022--2025. The complementary down-day frequencies are 48.37\%, 46.95\%, 44.21\%, and 44.72\% (they do not sum to exactly 100\% with the up-day figures because a small number of test days record an exactly zero return); we state them explicitly because the base-rate-identity checks reported below and in Section~\ref{sec:ablation-results} are made against whichever of the two frequencies matches the sign a degenerate model emits, and a reader cannot otherwise verify those flags from the table alone. VMD-MFGNN's headline $h=1$ DA of 52.5\% is only 1.5 percentage points above that null, and at $h=5,10,22$ no model in this table, including VMD-MFGNN, exceeds the unconditional up-day frequency at all. We read this table as showing that this study's seven fitted models, including the proposed one, are best understood as a ranking among approaches that do not clearly outperform doing nothing, rather than as a demonstration that any of them, including VMD-MFGNN, has found exploitable structure in copper returns at this data scale. Section~\ref{sec:results-dm} still reports pairwise significance among the seven fitted models, since that question --- do these models differ meaningfully from one another --- is separate from, and does not resolve, the more basic question this section answers in the negative. We applied this paper's own base-rate-identity check (Section~\ref{sec:constantforecast}) to every cell of this table directly, loading all 28 saved prediction arrays and checking both the fraction of predictions sharing the majority sign and whether DA exactly equals the test period's class frequency: exactly one cell qualifies, Transformer at $h=5$ (100\% positive-sign predictions, DA=53.05\% identical to the up-day frequency to four decimal places, marked $^{\ddagger}$ above). Transformer's $h=22$ DA (44.72\%) also happens to numerically equal the down-day frequency at that horizon, but this is a coincidental count match, not the same artifact: only 89.4\% of its predictions are negative-sign and its prediction standard deviation is a healthy fraction of the true-return standard deviation, so we do not flag it. No other cell in this table shows either signature.
 
 Figure~\ref{fig:comparison} shows the seven-model comparison graphically (grouped bar charts of RMSE, MAE, and DA by model and horizon; the naive baseline is not part of this bar chart, which mirrors the pipeline's model-comparison output). No model's saved evaluation record carried an error flag, so all seven models are represented in both Table~\ref{tab:main} and Figure~\ref{fig:comparison}.
 
@@ -375,7 +473,27 @@ At the uncorrected $\alpha=0.05$ level, VMD-MFGNN attains a statistically signif
 \subsection{Ablation Study}
 \label{sec:ablation-results}
 
-Table~\ref{tab:ablation} reports RMSE, MAE, and DA per horizon for the six ablation variants defined in Section~\ref{sec:ablation}, all trained at the untuned default configuration. No significance column is included: with a single chronological split and no walk-forward folds or repeated seeds, there is no resampling unit available to compute a paired test or effect size for these comparisons (Section~\ref{sec:limitations}). Reported parameter counts are exact, read from the trained checkpoints (Section~\ref{sec:complexity}), not estimated.
+Table~\ref{tab:ablation} reports RMSE, MAE, and DA per horizon for the six ablation variants defined in Section~\ref{sec:ablation}, all trained at the untuned default configuration. No significance column is included: with a single chronological split and no walk-forward folds or repeated seeds, there is no resampling unit available to compute a paired test or effect size for these comparisons (Section~\ref{sec:limitations}). Reported parameter counts are exact, read from the trained checkpoints (Section~\ref{sec:complexity}), not estimated. Table~\ref{tab:ablation-config} consolidates each variant's architecture and exact parameter count in one place, since the matched-dim/matched-params distinction is otherwise easy to lose track of across running prose.
+
+\begin{table}[t]
+\centering
+\caption{Ablation-variant configurations. All variants share the untuned default attention-head count (4) and GNN-layer count (2, Section~\ref{sec:impl}); only VMD, graph type, and hidden dimension $d_h$ vary. Parameter counts read directly from each variant's trained checkpoint state dict.}
+\label{tab:ablation-config}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+Variant & VMD? & Graph & $d_h$ & Params & $\Delta$\% \\
+\midrule
+(a) full\_model & \checkmark & per-band ($K{=}5$) & 64 & 393{,}476 & --- \\
+(b) no\_vmd\_matched\_dim & --- & single & 64 & 88{,}836 & $-$77.4\% \\
+(b) no\_vmd\_matched\_params & --- & single & 136 & 394{,}116 & $+$0.16\% \\
+(c) pooled\_matched\_dim & \checkmark & pooled (single) & 64 & 84{,}618 & $-$78.5\% \\
+(c) pooled\_matched\_params & \checkmark & pooled (single) & 140 & 397{,}586 & $+$1.05\% \\
+(d) correlation\_graph & \checkmark & per-band, fixed (not learned) & 64 & 392{,}196 & $-$0.33\% \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
 
 \begin{table*}[!t]
 \centering
@@ -693,13 +811,33 @@ searched five parameters over 10 trials at fixed $K=5$, batch size 32 and weight
 decay $10^{-5}$. We re-ran a study three times larger and with three additional
 dimensions --- $K \in \{3,5,7,9\}$, weight decay (log-uniform, $10^{-6}$ to
 $10^{-3}$) and batch size $\in \{16,32,64\}$ --- for 30 trials under an identical
-objective (best validation average MSE over 25 epochs). Twelve trials completed
+objective (best validation average MSE over 25 epochs). Table~\ref{tab:hpo-wide-space} tabulates this eight-parameter search space and the resulting best trial alongside the original five-parameter study for direct comparison. Twelve trials completed
 and 18 were pruned. The best configuration found (hidden dimension 128, 8 heads,
 learning rate $\approx 0.00277$, dropout $\approx 0.0904$, 2 GNN layers, weight
 decay $\approx 2.0\times10^{-4}$, batch size 16, $K=9$) attains validation MSE
 0.0020145 against the deployed configuration's 0.0020509 --- an improvement of
 \textbf{1.78\%}, with only 2 of the 12 completed trials beating the deployed value
-at all, and the second-best tying it to four significant figures. That margin is
+at all, and the second-best tying it to four significant figures.
+
+\begin{table}[t]
+\centering
+\caption{Wider robustness-check search space (Section~\ref{sec:robustness}) versus the original main-table study (Table~\ref{tab:hpo-space}). 30 configured trials, 12 completed / 18 pruned. Rows with ``---'' were held fixed in the original study.}
+\label{tab:hpo-wide-space}
+\begin{tabular}{lll}
+\toprule
+Hyperparameter & Search space (wider) & Best trial \\
+\midrule
+hidden dim.\ $d_h$ & $\{32, 64, 128\}$ & 128 \\
+attention heads $H$ & $\{2, 4, 8\}$ & 8 \\
+learning rate & log-U$(10^{-4}, 10^{-2})$ & $\approx 0.00277$ \\
+dropout & U$(0.05, 0.3)$ & $\approx 0.0904$ \\
+GNN layers & $\{1, 2, 3\}$ & 2 \\
+band count $K$ & $\{3, 5, 7, 9\}$ (new) & 9 \\
+weight decay & log-U$(10^{-6}, 10^{-3})$ (new) & $\approx 2.0{\times}10^{-4}$ \\
+batch size & $\{16, 32, 64\}$ (new) & 16 \\
+\bottomrule
+\end{tabular}
+\end{table} That margin is
 smaller than this study's 3.1\% across-seed spread and far smaller than its 7.54\%
 same-configuration replicate spread, and part of it is attributable to optimizer
 step count rather than configuration quality, since the winning trial halves the
@@ -743,7 +881,7 @@ not depend on any modeling choice we were able to vary.
 
 While investigating the \texttt{results\_v2} graph-fix checkpoints' predictions directly, in order to understand \texttt{pooled\_graph\_graphfix}'s directional-accuracy numbers, we found something that changes how several directional-accuracy comparisons elsewhere in this paper should be read. \texttt{pooled\_graph\_graphfix}'s predicted returns have standard deviation ranging from $1.11\times10^{-5}$ ($h=1$) to $6.33\times10^{-4}$ ($h=22$) across the test set, against a true-return standard deviation of $1.79\times10^{-2}$ to $7.58\times10^{-2}$ over the same horizons---three to four orders of magnitude less dispersion than the target. Directly inspecting the raw prediction arrays shows why: at every one of the four horizons, this model's 984 test-set predictions are of a single, constant sign (all negative). A model whose forecast never changes sign is not exercising directional judgment on any individual sample; its ``directional accuracy'' can only ever equal the fraction of test days on which the true return happened to share that one sign.
 
-We verified this precisely rather than assuming it: recomputing directional accuracy directly from the saved \texttt{results\_v2/predictions/pooled\_graph\_graphfix\_\{1,5,10,22\}.npy} prediction and true-value arrays reproduces the reported DA figures (48.374, 46.951, 44.207, 44.715 at $h=1,5,10,22$) to four decimal places, and each of these values in turn equals, to four decimal places, the test period's unconditional frequency of the sign this model always predicts (down-day frequency 48.374\%, 46.951\%, 44.207\%/44.614\% depending on zero-return handling, and 44.715\% at the respective horizons). This is not a coincidental resemblance; it is an identity, because a constant-sign forecaster's accuracy is mathematically the base rate of the sign it happens to emit, no more and no less. The same pattern reproduces in \texttt{pooled\_graph\_matched\_params\_tuned} from the confound-check experiment (Section~\ref{sec:confound-tuned}): its four DA values (48.37, 53.05, 55.39, 44.72) match the corresponding test-period class frequencies to the same precision, even though we did not archive that run's raw prediction arrays and can only confirm it via this frequency match rather than by inspecting prediction dispersion directly. Cross-referencing further, this pattern is consistent with what motivated the \texttt{results\_v2} investigation in the first place: multiple models across the original untuned ablation (Section~\ref{sec:ablation-results}), the tuned confound-check (Section~\ref{sec:confound-tuned}), and the fix experiment above show DA values that coincide with plausible class-frequency figures for their horizon, though \texttt{pooled\_graph\_graphfix} and \texttt{pooled\_graph\_matched\_params\_tuned} are the two cases we can state this about with full confidence, having checked prediction dispersion or exact frequency-matching directly. A binomial test of each model's hit count against its horizon's majority-class frequency, run across every model$\times$horizon cell in the fix-experiment run, fails to reject the majority-class null at conventional significance levels in every cell tested---these apparent directional-accuracy figures do not represent a statistically demonstrated departure from what the majority class alone would produce.
+We verified this precisely rather than assuming it: recomputing directional accuracy directly from the saved \texttt{results\_v2/predictions/pooled\_graph\_graphfix\_\{1,5,10,22\}.npy} prediction and true-value arrays reproduces the reported DA figures (48.374, 46.951, 44.207, 44.715 at $h=1,5,10,22$) to four decimal places, and each of these values in turn equals, to four decimal places, the test period's unconditional frequency of the sign this model always predicts (down-day frequency 48.374\%, 46.951\%, 44.207\%, and 44.715\% at the respective horizons, computed under the same strict-negative convention stated in Section~\ref{sec:experiments}: a day with an exactly-zero return is counted in neither the up-day nor the down-day frequency, consistent with the DA convention used throughout this paper). This is not a coincidental resemblance; it is an identity, because a constant-sign forecaster's accuracy is mathematically the base rate of the sign it happens to emit, no more and no less. The same pattern reproduces in \texttt{pooled\_graph\_matched\_params\_tuned} from the confound-check experiment (Section~\ref{sec:confound-tuned}): its four DA values (48.37, 53.05, 55.39, 44.72) match the corresponding test-period class frequencies to the same precision, even though we did not archive that run's raw prediction arrays and can only confirm it via this frequency match rather than by inspecting prediction dispersion directly. Cross-referencing further, this pattern is consistent with what motivated the \texttt{results\_v2} investigation in the first place: multiple models across the original untuned ablation (Section~\ref{sec:ablation-results}), the tuned confound-check (Section~\ref{sec:confound-tuned}), and the fix experiment above show DA values that coincide with plausible class-frequency figures for their horizon, though \texttt{pooled\_graph\_graphfix} and \texttt{pooled\_graph\_matched\_params\_tuned} are the two cases we can state this about with full confidence, having checked prediction dispersion or exact frequency-matching directly. A binomial test of each model's hit count against its horizon's majority-class frequency, run across every model$\times$horizon cell in the fix-experiment run, fails to reject the majority-class null at conventional significance levels in every cell tested---these apparent directional-accuracy figures do not represent a statistically demonstrated departure from what the majority class alone would produce.
 
 The direct consequence is a retraction. Section~\ref{sec:confound-tuned} reported that, at HPO-tuned hyperparameters, \texttt{full\_model\_tuned} beats \texttt{pooled\_graph\_matched\_params\_tuned} on directional accuracy at three of four horizons, which on its face reverses this paper's negative ablation finding and would suggest a real per-band advantage once capacity and tuning are no longer confounded. \textbf{We do not carry that reading forward, and explicitly retract it here.} The comparison's losing side, \texttt{pooled\_graph\_matched\_params\_tuned}, is the same class of degenerate constant-sign forecaster documented above; its DA values are an artifact of which constant sign it happened to emit relative to each horizon's majority class, not a measurement of directional skill it lost to a better-performing per-band model. A win recorded against a degenerate opponent is not evidence of skill on the winning side either. We therefore withdraw any claim, hedged or otherwise, that per-band graph construction demonstrates a real directional-accuracy advantage over pooling at this data scale; no experiment in this paper supports that claim once prediction dispersion is checked, and Section~\ref{sec:discussion}'s answer to RQ1 is written accordingly.
 
