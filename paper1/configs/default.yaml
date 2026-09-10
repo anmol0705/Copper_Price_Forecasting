@@ -56,6 +56,16 @@ training:
   learning_rate: 0.001
   weight_decay: 1.0e-5
   patience: 20
+  # OFF by default (0 = unchanged verified-pipeline behavior: the best-val
+  # checkpoint is eligible from epoch 0). When > 0, no checkpoint before
+  # epoch `min_epochs - 1` is eligible to become the "best" evaluated
+  # checkpoint, even if its val loss is lower -- see trainer.py's fit() and
+  # EarlyStopper.should_stop(). Added after finding that several
+  # ablation-study variants' best-val checkpoint landed at epoch 0-5 (val
+  # loss never improved after initialization), confounding RMSE/MAE/DA
+  # comparisons with training length rather than architecture (see
+  # main.tex's Ablation Study section, M1/M2).
+  min_epochs: 0
   scheduler: "cosine"
   seed: 42
   # OFF by default (False = unchanged verified-pipeline behavior). When

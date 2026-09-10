@@ -32,18 +32,31 @@ def get_device() -> torch.device:
 
 
 class EarlyStopper:
-    def __init__(self, patience: int = 20, min_delta: float = 0.0):
+    def __init__(self, patience: int = 20, min_delta: float = 0.0, min_epochs: int = 0):
+        """min_epochs: stopping is suppressed entirely (should_stop always
+        returns False) until at least this many epochs have been observed,
+        regardless of the patience counter. Default 0 preserves the exact
+        prior behavior. Added after finding that several ablation-study
+        variants early-stopped after 0-5 effective epochs of training (the
+        best-validation epoch coinciding with initialization), confounding
+        RMSE/MAE/DA comparisons with training length rather than
+        architecture -- see main.tex's Ablation Study section."""
         self.patience = patience
         self.min_delta = min_delta
+        self.min_epochs = min_epochs
         self.counter = 0
         self.best_loss = float("inf")
+        self.num_seen = 0
 
     def should_stop(self, val_loss: float) -> bool:
+        self.num_seen += 1
         if val_loss < self.best_loss - self.min_delta:
             self.best_loss = val_loss
             self.counter = 0
             return False
         self.counter += 1
+        if self.num_seen < self.min_epochs:
+            return False
         return self.counter >= self.patience
 
 

@@ -104,7 +104,8 @@ class VMDMFGNNTrainer:
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=tc["epochs"]
         )
-        self.stopper = EarlyStopper(patience=tc["patience"])
+        self.stopper = EarlyStopper(patience=tc["patience"],
+                                     min_epochs=tc.get("min_epochs", 0))
 
     def _forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         """Forward pass that threads precomputed correlation adjacency
@@ -333,6 +334,7 @@ class VMDMFGNNTrainer:
                         )
 
         best_state = None
+        best_eligible_val_mse = float("inf")
         history = {"train_loss": [], "val_metrics": []}
         last_epoch = -1
 
@@ -352,7 +354,22 @@ class VMDMFGNNTrainer:
                             f"| val_mse={val_mse:.6f} | {dt:.1f}s")
 
             last_epoch = epoch
-            if val_mse < self.stopper.best_loss:
+            # "Best" checkpoint selection is gated by the SAME min_epochs floor
+            # as should_stop(), tracked independently here (best_eligible_val_mse)
+            # rather than via self.stopper.best_loss. self.stopper.best_loss
+            # starts tracking from epoch 0 regardless of the floor (that's what
+            # lets should_stop() apply patience correctly once the floor lifts),
+            # so gating best_state on "val_mse < self.stopper.best_loss" alone
+            # (the old condition) would still let an epoch-0 checkpoint win
+            # forever if validation loss never improves after epoch 0 -- the
+            # min_epochs floor would then delay early-stopping without changing
+            # which weights actually get evaluated, silently failing to fix the
+            # early-stopping-artifact confound (M1/M2, see main.tex Ablation
+            # Study section). Requiring epoch+1 >= min_epochs here ensures the
+            # evaluated checkpoint always reflects at least min_epochs of
+            # training.
+            if (epoch + 1) >= self.stopper.min_epochs and val_mse < best_eligible_val_mse:
+                best_eligible_val_mse = val_mse
                 best_state = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
                 if checkpoint_path is not None:
                     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -763,7 +780,29 @@ def run_ablation_studies(config: dict, data: Dict) -> Dict:
                     checkpoint_path=Path(f"results/checkpoints/{key}.pt"))
         results = trainer.evaluate(test_loader)
         results["name"] = key
+        results["final_epoch"] = trainer.final_epoch
         ablation_results[key] = results
+
+        # Archive per-sample predictions/targets (same format as
+        # run_baseline/run_all_experiments' results/predictions/{name}_{h}.npy
+        # + {name}_{h}_true.npy), so a paired significance test (e.g.
+        # Diebold-Mariano) can be computed for ablation comparisons after the
+        # fact -- previously not possible because these arrays were never
+        # saved, which is the actual reason (not "no valid resampling unit
+        # exists") the ablation table carries no significance column.
+        preds = trainer.predict(test_loader)
+        ys = []
+        for _, y in test_loader:
+            ys.append(y.numpy() if isinstance(y, torch.Tensor) else y.cpu().numpy())
+        true = np.concatenate(ys, axis=0)
+        pred_dir = Path("results/ablation_predictions")
+        pred_dir.mkdir(parents=True, exist_ok=True)
+        for i, h in enumerate(model.horizons):
+            pred_h = preds[str(h)]
+            true_h = true[:, i]
+            np.save(pred_dir / f"{key}_{h}.npy", pred_h)
+            np.save(pred_dir / f"{key}_{h}_true.npy", true_h)
+
         return trainer
 
     # (a) full_model: standard VMD-MFGNN, learned per-band graphs, real VMD data.
