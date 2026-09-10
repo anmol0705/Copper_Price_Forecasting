@@ -68,7 +68,7 @@
 \node[font=\sffamily\bfseries\large, black!45, fill=white, inner sep=2pt] at (5.85,2.0) {vs};
 
 % ================= RIGHT PANEL: pooled_graph =================
-\node[titlestyle, anchor=south] at (9.75,5.05) {(b) \texttt{pooled\_graph}: one shared graph};
+\node[titlestyle, anchor=south] at (9.75,5.05) {(c) \texttt{pooled\_graph}: one shared graph};
 
 \coordinate (Rstart) at (7.1,0);
 \foreach \i/\col in {0/bandA, 1/bandB, 2/bandC, 3/bandD, 4/bandE} {
@@ -94,7 +94,7 @@
 \coordinate (RboxBL) at ($(Rstart)+(0.05,1.55)$);
 \coordinate (RboxTR) at ($(Rstart)+(5.4,2.65)$);
 \node[draw=black!30, dashed, rounded corners=3pt, fit=(RboxBL) (RboxTR), inner sep=0pt] {};
-\node[font=\sffamily\tiny\itshape, black!55, text width=5.8cm] at ($(Rstart)+(2.7,-0.85)$) {band representations pooled \emph{before} graph construction -- one adjacency $\mathbf{A}_{\text{shared}}$ for all $K$ bands};
+\node[font=\sffamily\tiny\itshape, black!55, text width=5.8cm] at ($(Rstart)+(2.7,-0.85)$) {raw band \emph{values} pooled \emph{before} graph construction -- one adjacency $\mathbf{A}_{\text{shared}}$ for all $K$ bands};
 
 \end{tikzpicture}
 \end{document}
