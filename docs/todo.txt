@@ -89,3 +89,61 @@ VMD-MFGNN v2 — Outstanding TODOs
    a real experiment, not a paper1 text edit — would need its own Colab run
    and is a meaningfully larger scope change than anything else in this
    TODO list.
+
+9. [OPEN, HIGH PRIORITY per author -- flagged as a potential direct-
+   rejection risk, not yet implemented, author is still reviewing before
+   batching all changes] Two related architectural gaps found during Q&A
+   review, both around `GATConv` usage in `src/models/vmd_mfgnn.py`
+   (`FrequencyBandModule.__init__`, line ~137):
+
+   (a) GAT vs GATv2. Currently uses PyTorch Geometric's `GATConv`
+   (original GAT, Velickovic 2018), not `GATv2Conv`. GATv2 (Brody/Alon/
+   Yahav, ICLR 2022, arXiv:2105.14491) fixes a proven "static attention"
+   limitation in original GAT (attention-score ranking across a node's
+   neighbors is provably query-independent) and is a same-cost drop-in
+   replacement that strictly dominates GAT across the original paper's
+   11 benchmarks. main.tex never discusses or justifies choosing GAT over
+   GATv2 anywhere -- a credible reviewer is very likely to ask this.
+   Author's decision: swap to GATv2Conv (not just add as an ablation
+   option) once ready to batch changes.
+
+   (b) The learned per-band adjacency does two jobs that aren't equally
+   defensible: (i) topology/sparsification via top-k=4-of-8 -- NOT
+   redundant with GAT, since vanilla GAT can't hard-drop edges on its
+   own; and (ii) supplying its scalar value as GAT's `edge_dim=1` edge
+   feature (`edge_attr` in `FrequencyBandModule.forward`, line ~171-172)
+   -- genuinely questionable, since GAT computes its OWN attention
+   coefficient from node features + that edge feature jointly, meaning
+   two separate parameterizations (upstream bilinear embeddings, GAT's
+   internal attention) both capable of expressing edge importance. If
+   GAT's own attention is expressive enough alone, the model has a cheap
+   path to good task performance that never requires the upstream
+   adjacency to become informative -- a plausible ARCHITECTURAL
+   contributor to the isotropic-collapse finding (Section V), not just
+   an unlucky optimization dynamic. Checked: this codebase never extracts
+   GAT's own internal attention weights via PyG's
+   `return_attention_weights=True` to test this directly -- every
+   existing diagnostic measures only the upstream adjacency.
+   Author's decision: build TWO separate model variants to test this
+   directly, not just add a diagnostic --
+     - variant with the learned edge weight passed to GAT as `edge_attr`
+       (the current design, kept as-is for comparison)
+     - variant WITHOUT it: adjacency still determines topology (top-k
+       mask decides which edges exist), but `GATConv` is NOT given
+       `edge_dim`/`edge_attr` at all -- GAT computes attention purely
+       from node features under the fixed sparsified topology.
+   Concrete next steps when picked up: (1) swap `GATConv` -> `GATv2Conv`
+   in `FrequencyBandModule.__init__`; (2) add a config flag (e.g.
+   `use_edge_weight: bool`) to `FrequencyBandModule`/`VMDMFGNN` that
+   conditionally constructs the GAT layer with/without `edge_dim=1` and
+   conditionally passes `edge_attr` in `forward`; (3) also extract and
+   log GAT's own `return_attention_weights=True` output as a new
+   diagnostic in `src/diagnostics.py`, to directly check whether GAT's
+   internal attention differentiates even when the upstream adjacency is
+   uniform; (4) add both new variants to the ablation study
+   (`run_ablation_studies` in `src/trainer.py`) or a dedicated new
+   experiment function; (5) real Colab re-run required, cannot be tested
+   without GPU training. Not started -- author is reviewing the rest of
+   the project first before batching this with any other changes.
+   See QNA_LOG.md's "GAT vs GATv2 / redundant edge weight" entry for the
+   full reasoning this was flagged from.
