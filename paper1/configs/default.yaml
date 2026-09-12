@@ -86,7 +86,17 @@ training:
   # loss never improved after initialization), confounding RMSE/MAE/DA
   # comparisons with training length rather than architecture (see
   # main.tex's Ablation Study section, M1/M2).
-  min_epochs: 0
+  # Turned ON for the N=15 consolidated run (PLAN.md "close the self-disclosed
+  # epoch-count gap"): 30, not the 0 default, because this session's own null-
+  # control-experiment docstring independently puts collapse onset at roughly
+  # epoch 20-30 once validation loss plateaus, and several PRE-fix ablation
+  # variants were previously observed landing their best-val checkpoint at
+  # epoch 0-5 (see the comment above). 30 is conservative relative to that
+  # onset estimate without being large enough to meaningfully delay early
+  # stopping for models that genuinely do converge fast. Applies uniformly to
+  # VMD-MFGNN, all 8 baselines (min_epochs now threaded into TorchBaseline.fit,
+  # see PLAN.md), and all 8 ablation variants.
+  min_epochs: 30
   scheduler: "cosine"
   seed: 42
   # OFF by default (False = unchanged verified-pipeline behavior). When
@@ -111,7 +121,16 @@ training:
   # (0.018/0.040/0.055/0.076 for h=1/5/10/22). Both are mean-normalized to
   # 1.0 so the total loss magnitude (and hence the effective LR and
   # grad-clip threshold) is unchanged -- only the relative balance moves.
-  horizon_loss_weighting: "none"
+  # Set to "target_variance" for the N=15 consolidated run (was "none").
+  # Chosen over "naive_rmse" as the more defensible default: it normalizes by
+  # each horizon's own TRAINING-split target variance (a standard, dataset-
+  # derived, hyperparameter-free normalization), rather than by fixed
+  # external reference RMSEs that would need their own justification and go
+  # stale the moment the dataset changes (as it just did, N=8->15). This
+  # directly addresses the h=22-dominates-by-scale-alone imbalance the
+  # unweighted "none" sum leaves in the gradient reaching the shared graph
+  # layer (see PLAN.md Sec 3 / Sec 3c).
+  horizon_loss_weighting: "target_variance"
 
 # Hyperparameter optimization (Optuna, TPE + median pruning) -- opt-in, and
 # scoped to VMD-MFGNN (the proposed model) ONLY. The 6 locked baselines
