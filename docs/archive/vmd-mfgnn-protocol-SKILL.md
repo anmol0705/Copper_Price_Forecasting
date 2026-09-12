@@ -6,6 +6,13 @@ Reference this file instead of re-deriving scope.
 
 ## Locked Input Variables (8 total)
 
+> **SUPERSEDED (2026-09-12)**: this 8-variable, Yahoo-Finance-only scope (including
+> "Explicitly out of scope: FRED") has been replaced by the N=16 expansion — 12 Yahoo
+> Finance tickers + 4 FRED series — described in `paper1/PLAN.md` Section 1. The table
+> and notes below are retained as accurate *history* of the v2 locked scope, not as the
+> current scope; `paper1/src/data_pipeline.py`'s `TICKERS` / `FRED_*_SERIES` are the
+> source of truth.
+
 All data sourced via **Yahoo Finance only**. Explicitly out of scope: FRED, TC/RC, COT, BDI.
 
 | Variable | Ticker | Source |
