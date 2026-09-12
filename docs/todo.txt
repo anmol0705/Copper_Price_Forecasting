@@ -147,3 +147,62 @@ VMD-MFGNN v2 — Outstanding TODOs
    the project first before batching this with any other changes.
    See QNA_LOG.md's "GAT vs GATv2 / redundant edge weight" entry for the
    full reasoning this was flagged from.
+
+10. [OPEN, tracked per author decision, not yet implemented] Loss function
+    for return series: MSE (default) and MAE are both point-estimate
+    losses targeting the conditional mean; daily commodity returns are
+    heavy-tailed and heteroskedastic (volatility clustering), which
+    neither loss accounts for. Untested alternative: a distributional
+    loss (Gaussian or Student-t negative log-likelihood with a learned,
+    time-varying variance) or a quantile/pinball loss, more principled
+    for return series specifically than a point-estimate loss. Note this
+    is DISTINCT from "is MSE what's causing the collapse/negative
+    result" -- that question is already answered (no): the loss
+    comparison robustness experiment (Section V-F of paper1, `trainer.py`
+    `_LOSS_FNS`) already shows the collapse is loss-invariant across MSE
+    and MAE (the Huber arm accidentally behaved identically to MSE the
+    whole run and doesn't count as a third distinct test, honestly
+    disclosed in the paper). This item is about whether a better-suited
+    loss could improve the MODEL's actual forecasting quality, not about
+    the collapse mechanism. Concrete next step when picked up: implement
+    a heteroskedastic-Gaussian-NLL or pinball-loss option in
+    `trainer.py`'s `_LOSS_FNS` (needs a second output head for
+    predicted variance/quantiles, since current heads only output a
+    point estimate), and compare against the existing MSE/MAE results.
+    Real experiment, needs a Colab re-run. See QNA_LOG.md's "MSE loss /
+    multi-horizon combining" entry for the full reasoning.
+
+11. [OPEN, tracked per author decision, not yet implemented] Multi-horizon
+    architecture and loss combination, two related gaps found together:
+    (a) The model is NOT one deep network per horizon -- confirmed in
+    `src/models/vmd_mfgnn.py:258-265`: 4 separate but tiny 2-layer MLP
+    heads (`Linear->ReLU->Dropout->Linear`), one per horizon, sharing the
+    ENTIRE upstream pipeline (VMD -> per-band graph -> GAT -> LSTM ->
+    attention fusion -- effectively all parameters). This is the "MIMO"/
+    joint multi-task strategy in the multi-horizon forecasting literature
+    (vs. "Direct" = fully separate models per horizon, "Recursive" =
+    iterate a one-step model); MIMO's known trade-off is sample
+    efficiency/positive transfer at the cost of predictor flexibility --
+    plausible that a 1-day (noise-dominated) and 22-day (trend-dominated)
+    signal need different representations that one shared backbone can't
+    serve equally well.
+    (b) The training loss (`src/trainer.py:197-198`) sums per-horizon MSE
+    UNWEIGHTED, no normalization. Using paper1's own naive-baseline row
+    (Table IV, true-return std by horizon: 0.0179/0.0399/0.0552/0.0759
+    for h=1/5/10/22), variance at h=22 is ~18x larger than at h=1, so the
+    h=22 loss term dominates the combined gradient by roughly that same
+    factor purely from scale, before any skill difference -- the shared
+    backbone is implicitly trained to prioritize the long horizon over
+    the short one. Real, quantifiable, currently undisclosed anywhere in
+    paper1.
+    Concrete next steps when picked up: (1) try per-horizon loss
+    weighting/normalization (e.g. divide each horizon's loss term by that
+    horizon's target variance, estimated from the training split) as the
+    cheap fix for (b) alone; (2) as a more substantial architectural
+    change for (a), consider giving each horizon head more capacity
+    (deeper MLP, or a horizon-specific final LSTM/attention layer instead
+    of only the final 2-layer MLP) or testing a "Direct" strategy variant
+    (separate backbones per horizon) as a comparison point against the
+    current MIMO design. Real experiment, needs a Colab re-run. See
+    QNA_LOG.md's "MSE loss / multi-horizon combining" entry for the full
+    reasoning.
