@@ -832,9 +832,28 @@ def compute_mode_correlation_graph(modes: np.ndarray, band_idx: int,
 
 
 def _hash_price_array(values: np.ndarray) -> str:
-    """SHA-256 hash of the raw price array bytes, used to invalidate a stale
-    VMD cache if the underlying data pull changes."""
-    return hashlib.sha256(np.ascontiguousarray(values).tobytes()).hexdigest()
+    """SHA-256 hash of the price array, used to invalidate a stale VMD cache
+    if the underlying data pull genuinely changes.
+
+    Rounds to 8 decimal places before hashing -- NOT a no-op. Found this
+    session: pandas' to_csv()/read_csv() round-trip does not perfectly
+    preserve float64 bit patterns (a text-serialization artifact, ~1e-15
+    magnitude, unrelated to any real data change -- verified directly: the
+    exact same DataFrame hashed before and after one write+read round-trip
+    produced two different SHA-256 hashes). Since this hash is computed fresh
+    from a CSV read on every process start (DataDownloader.download()'s
+    cache-hit path always re-reads from disk), this made the VMD-modes cache
+    invalidate itself on literally every second run against the identical
+    data -- including the exact local-prep-then-Drive-upload workflow this
+    project's two-phase data pipeline depends on, silently burning a full
+    ~40-60 minute VMD recompute every time. 8 decimals is ~7 orders of
+    magnitude coarser than the observed round-trip noise (~1e-15) and ~4
+    orders of magnitude finer than any real price/FRED-value difference that
+    should legitimately invalidate the cache, so this closes the false
+    invalidation without weakening genuine staleness detection.
+    """
+    rounded = np.round(np.ascontiguousarray(values), decimals=8)
+    return hashlib.sha256(rounded.tobytes()).hexdigest()
 
 
 def build_decomposed_modes(prices: pd.DataFrame, vc: dict, dc: dict,
