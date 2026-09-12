@@ -28,6 +28,34 @@ _LOSS_FNS = {
     "huber": lambda pred, target: F.smooth_l1_loss(pred, target, beta=1.0),
 }
 
+# Per-horizon loss weighting (PLAN.md §3, "Multi-horizon loss reweighting").
+# "none" is the default and reproduces the exact pre-existing behavior: an
+# unweighted sum of the per-horizon losses. The other modes divide each
+# horizon's loss term by an estimate of that horizon's target scale, because
+# h=22's target variance is ~18x h=1's, so the h=22 term dominates the
+# combined gradient by scale alone -- including the gradient that reaches the
+# shared graph layer.
+#
+# Naive-baseline RMSEs for this project's copper target, used by the
+# "naive_rmse" mode as fixed reference scales (variance ~ rmse^2).
+_NAIVE_RMSE_REFERENCE = {1: 0.018, 5: 0.040, 10: 0.055, 22: 0.076}
+_HORIZON_WEIGHTINGS = ("none", "target_variance", "naive_rmse")
+
+
+def _normalize_weights(weights: List[float]) -> List[float]:
+    """Rescale so the weights average to 1.0.
+
+    Keeps the TOTAL loss magnitude (and therefore the effective learning
+    rate / gradient-clipping threshold) comparable to the unweighted sum;
+    only the RELATIVE balance between horizons changes. Without this, 1/var
+    weights would inflate the loss by ~3000x and silently change training
+    dynamics far beyond the intended reweighting.
+    """
+    mean_w = sum(weights) / max(len(weights), 1)
+    if mean_w <= 0 or not np.isfinite(mean_w):
+        return [1.0] * len(weights)
+    return [w / mean_w for w in weights]
+
 
 def _get_graph_type(model) -> str:
     """Detect a model's graph_type. VMDMFGNN itself doesn't store a
@@ -66,6 +94,20 @@ class VMDMFGNNTrainer:
         self.loss_fn_name = loss_name
         self._loss_fn = _LOSS_FNS[loss_name]
 
+        # Per-horizon loss weighting. Absent key -> "none" -> byte-for-byte
+        # the pre-existing unweighted sum. Validated eagerly, same as loss_fn.
+        weighting = tc.get("horizon_loss_weighting", "none")
+        if weighting not in _HORIZON_WEIGHTINGS:
+            raise ValueError(
+                f"Unknown training.horizon_loss_weighting={weighting!r}; "
+                f"expected one of {sorted(_HORIZON_WEIGHTINGS)}"
+            )
+        self.horizon_loss_weighting = weighting
+        # Filled in lazily/at fit() time; None means "unweighted".
+        self._horizon_weights = None
+        if weighting == "naive_rmse":
+            self._horizon_weights = self._weights_from_naive_rmse()
+
         if tc.get("no_decay_graph_embeddings", False):
             # OFF by default. When enabled, excludes the graph embedding
             # parameters (FrequencyGraphConstructor's emb1/emb2, for every
@@ -81,11 +123,22 @@ class VMDMFGNNTrainer:
             # "graph_constructors.0.emb1.weight" for VMDMFGNN's per-band
             # ModuleList, "graph_constructor.emb1.weight" for
             # PooledGraphMFGNN's single constructor).
+            #
+            # The learnable softmax log-temperature added for the §3b.2
+            # temperature-parameterized graph fix
+            # (FrequencyGraphConstructor.log_temperature, present only when
+            # use_temperature=True) is matched here too and lands in the same
+            # zero-decay group: it is subject to the identical collapse
+            # mechanism as the embeddings. Its parameter path has no trailing
+            # ".weight" (it is a bare nn.Parameter, e.g.
+            # "graph_constructors.0.log_temperature"), hence the endswith
+            # match rather than a ".x." substring match.
             no_decay_params, decay_params = [], []
             for name, param in model.named_parameters():
                 if not param.requires_grad:
                     continue
-                if ".emb1." in name or ".emb2." in name:
+                if (".emb1." in name or ".emb2." in name
+                        or name.split(".")[-1] == "log_temperature"):
                     no_decay_params.append(param)
                 else:
                     decay_params.append(param)
@@ -106,6 +159,43 @@ class VMDMFGNNTrainer:
         )
         self.stopper = EarlyStopper(patience=tc["patience"],
                                      min_epochs=tc.get("min_epochs", 0))
+
+    def _weights_from_naive_rmse(self) -> List[float]:
+        """Fixed per-horizon weights from this project's naive-baseline RMSEs
+        (w_h ~ 1/rmse_h^2, i.e. 1/variance), mean-normalized to 1.0. Horizons
+        absent from the reference table fall back to weight 1.0.
+        """
+        horizons = getattr(self.model, "horizons", [1, 5, 10, 22])
+        raw = []
+        for h in horizons:
+            rmse = _NAIVE_RMSE_REFERENCE.get(int(h))
+            raw.append(1.0 / (rmse ** 2) if rmse else 1.0)
+        weights = _normalize_weights(raw)
+        logger.info(f"horizon_loss_weighting='naive_rmse': per-horizon weights "
+                    f"{[f'h{h}={w:.3f}' for h, w in zip(horizons, weights)]}")
+        return weights
+
+    def _estimate_horizon_weights(self, train_loader: DataLoader) -> List[float]:
+        """Per-horizon weights from the TRAINING split's target variance
+        (w_h = 1/var_h, mean-normalized to 1.0). Training targets only --
+        never validation/test -- so no information leaks across the split.
+        """
+        horizons = getattr(self.model, "horizons", [1, 5, 10, 22])
+        ys = []
+        for _, y in train_loader:
+            ys.append(y.numpy() if isinstance(y, torch.Tensor) else np.asarray(y))
+        targets = np.concatenate(ys, axis=0)  # (n_samples, n_horizons)
+        raw = []
+        for i, _h in enumerate(horizons):
+            var = float(np.var(targets[:, i]))
+            raw.append(1.0 / var if var > 0 else 1.0)
+        weights = _normalize_weights(raw)
+        logger.info(
+            f"horizon_loss_weighting='target_variance': training-split target "
+            f"variances "
+            f"{[f'h{h}={float(np.var(targets[:, i])):.3e}' for i, h in enumerate(horizons)]}"
+            f" -> weights {[f'h{h}={w:.3f}' for h, w in zip(horizons, weights)]}")
+        return weights
 
     def _forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         """Forward pass that threads precomputed correlation adjacency
@@ -188,14 +278,24 @@ class VMDMFGNNTrainer:
 
     def train_epoch(self, loader: DataLoader) -> float:
         self.model.train()
+        # Lazily estimate variance-based weights if fit() wasn't the caller
+        # (e.g. train_epoch used directly). No-op in the default "none" mode.
+        if (self.horizon_loss_weighting == "target_variance"
+                and self._horizon_weights is None):
+            self._horizon_weights = self._estimate_horizon_weights(loader)
+        weights = self._horizon_weights
         total_loss = 0.0
         n = 0
         for x, y in loader:
             x, y = x.to(self.device), y.to(self.device)
             self.optimizer.zero_grad()
             preds = self._forward(x)
-            loss = sum(self._loss_fn(preds[str(h)], y[:, i])
-                       for i, h in enumerate(self.model.horizons))
+            if weights is None:
+                loss = sum(self._loss_fn(preds[str(h)], y[:, i])
+                           for i, h in enumerate(self.model.horizons))
+            else:
+                loss = sum(weights[i] * self._loss_fn(preds[str(h)], y[:, i])
+                           for i, h in enumerate(self.model.horizons))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             self.optimizer.step()
@@ -277,6 +377,13 @@ class VMDMFGNNTrainer:
 
         if _get_graph_type(self.model) == "correlation":
             self._freeze_correlation_adjs(train_loader)
+
+        # Estimate per-horizon loss weights once, from the training split
+        # only. No-op in the default "none" mode and in "naive_rmse" (fixed
+        # reference weights, already computed at construction time).
+        if (self.horizon_loss_weighting == "target_variance"
+                and self._horizon_weights is None):
+            self._horizon_weights = self._estimate_horizon_weights(train_loader)
 
         if checkpoint_path is not None:
             checkpoint_path = Path(checkpoint_path)
