@@ -5,6 +5,7 @@ paper2/data/*.csv
 paper2/data/cache/
 paper2/data/cubench/cache/
 paper2/data/cubench/raw/*.csv
+paper1/data/
 paper1/results/**/predictions/
 paper1/results/**/interpretability/
 paper1/results/**/checkpoints/
