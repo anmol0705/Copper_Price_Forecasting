@@ -565,7 +565,7 @@ def run_all_experiments(config: dict, data: Dict):
     from .models.vmd_mfgnn import VMDMFGNN
     from .models.baselines import (
         LSTMBaseline, TransformerBaseline, VMDLSTMBaseline,
-        SimpleMTGNN, XGBoostBaseline, ARIMABaseline,
+        SimpleMTGNN, MTGNNBaseline, XGBoostBaseline, ARIMABaseline,
     )
 
     seed = config["training"]["seed"]
@@ -676,6 +676,11 @@ def run_all_experiments(config: dict, data: Dict):
         ("LSTM", lambda: LSTMBaseline(base_cfg)),
         ("Transformer", lambda: TransformerBaseline(base_cfg)),
         ("SimpleMTGNN", lambda: SimpleMTGNN(base_cfg)),
+        # Faithful MTGNN reproduction (PLAN.md Section 7), kept alongside
+        # SimpleMTGNN rather than replacing it -- two rows at different
+        # fidelity/capacity, not a swap. See MTGNNBaseline's docstring in
+        # src/models/baselines.py for what was ported vs. adapted.
+        ("MTGNN", lambda: MTGNNBaseline(base_cfg)),
         ("XGBoost", lambda: XGBoostBaseline(base_cfg)),
     ]
     for name, ctor in raw_baseline_ctors:
