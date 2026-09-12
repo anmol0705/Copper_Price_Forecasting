@@ -125,14 +125,47 @@ def gradient_magnitude_diagnostic(model, loader, device, loss_fn=F.mse_loss,
     `adjacency_state_diagnostic` / `adjacency_movement_from_init` do).
 
     Returns: {"emb_grad_norm_mean": float, "emb_grad_norm_per_batch": [...],
-              "other_grad_norm_mean": float, "n_batches_used": int}.
+              "other_grad_norm_mean": float, "n_batches_used": int,
+              "matched_param_count": int, "matched_param_names": [...],
+              "matched_grad_none_count": int}.
     Model is left in eval() mode with gradients zeroed after this call (does
     not corrupt a training run if called mid-training on the live model --
     though the caller should typically use a fresh checkpoint copy instead).
+
+    DISAMBIGUATION KEYS (added after the bug write-up in PLAN.md 3b.1): the
+    original implementation skipped `p.grad is None` BEFORE testing the
+    name, so an `emb_grad_norm_mean` of exactly 0.0 was produced identically
+    by (a) zero parameters matching the `.emb1.`/`.emb2.` name pattern at
+    all -- e.g. a `graph_type != "learned"` model, which has no embedding
+    table -- and (b) a genuine, measured zero gradient on real matched
+    parameters. These are now distinguishable without re-running anything:
+      - `matched_param_count`: how many trainable parameters matched the
+        name pattern, counted over `named_parameters()` INDEPENDENTLY of
+        whether autograd populated `.grad`. 0 here means the 0.0 norm is
+        vacuous (nothing was measured), not a finding.
+      - `matched_grad_none_count`: how many of those matched parameters had
+        `.grad is None` after the LAST backward pass -- i.e. autograd never
+        reached them (detached/unused in the graph) as opposed to reaching
+        them with a zero value.
+      - `matched_param_names`: the actual dotted names matched, so the
+        ambiguity is settled by an artifact in the results row rather than
+        by re-deriving it from the model class later.
+    All three keys are also present (with the same types) on the
+    `n_used == 0` early-return path, so a caller can read them
+    unconditionally.
     """
     model.train()
     emb_norms, other_norms = [], []
     n_used = 0
+
+    # Counted once, up front, over ALL trainable parameters -- deliberately
+    # not inside the batch loop and deliberately not gated on `p.grad`.
+    matched_param_names = [
+        name for name, p in model.named_parameters()
+        if p.requires_grad and (".emb1." in name or ".emb2." in name)
+    ]
+    matched_param_count = len(matched_param_names)
+    matched_grad_none_count = matched_param_count  # until a backward pass runs
     for x, y in loader:
         if n_used >= num_batches:
             break
@@ -154,6 +187,12 @@ def gradient_magnitude_diagnostic(model, loader, device, loss_fn=F.mse_loss,
                 other_sq += g_sq
         emb_norms.append(emb_sq ** 0.5)
         other_norms.append(other_sq ** 0.5)
+        # Recomputed each batch (cheap) so it reflects the LAST backward
+        # pass, consistent with the norms recorded above.
+        matched_grad_none_count = sum(
+            1 for name, p in model.named_parameters()
+            if name in set(matched_param_names) and p.grad is None
+        )
         n_used += 1
 
     model.zero_grad(set_to_none=True)
@@ -162,13 +201,19 @@ def gradient_magnitude_diagnostic(model, loader, device, loss_fn=F.mse_loss,
     if n_used == 0:
         return {"emb_grad_norm_mean": float("nan"),
                 "emb_grad_norm_per_batch": [], "other_grad_norm_mean": float("nan"),
-                "n_batches_used": 0}
+                "n_batches_used": 0,
+                "matched_param_count": matched_param_count,
+                "matched_param_names": matched_param_names,
+                "matched_grad_none_count": matched_grad_none_count}
 
     return {
         "emb_grad_norm_mean": sum(emb_norms) / n_used,
         "emb_grad_norm_per_batch": emb_norms,
         "other_grad_norm_mean": sum(other_norms) / n_used,
         "n_batches_used": n_used,
+        "matched_param_count": matched_param_count,
+        "matched_param_names": matched_param_names,
+        "matched_grad_none_count": matched_grad_none_count,
     }
 
 

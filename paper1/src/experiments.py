@@ -732,3 +732,216 @@ def run_wider_hpo(base_config: dict, k_values: Optional[List[int]] = (3, 5, 7, 9
         study_name="vmd_mfgnn_wider_hpo",
         on_trial_done=on_trial_done,
     )
+
+
+# ---------------------------------------------------------------------------
+# Item 6: Null-control experiment (PLAN.md Section 3, first bullet)
+# ---------------------------------------------------------------------------
+
+def _materialize_loader(loader):
+    """Drains a DataLoader into (x, y) tensors, preserving sample order.
+
+    Used instead of reaching into `CopperDataset` internals so this works
+    for any loader shape `create_datasets` returns now or later.
+    """
+    import torch
+    xs, ys = [], []
+    for x, y in loader:
+        xs.append(x)
+        ys.append(y)
+    return torch.cat(xs, dim=0), torch.cat(ys, dim=0)
+
+
+def _make_null_inputs(x, mode: str, seed: int, target_idx: int = 0):
+    """Builds the null-control version of a VMD mode tensor.
+
+    x: (num_samples, lookback, K, num_vars).
+
+    Modes:
+      "real"     -- returned unchanged (the CONTROL arm; a null result is
+                    uninterpretable without the real-VMD arm measured under
+                    the identical seed/config/epoch budget).
+      "shuffle"  -- for every (band k, variable v != target_idx) pair
+                    INDEPENDENTLY, permutes the sample axis. This destroys
+                    the cross-variable co-movement structure (the only thing
+                    a cross-variable graph could possibly exploit) while
+                    leaving each channel's own within-window temporal
+                    dynamics and marginal distribution exactly intact.
+                    Independence across (k, v) is the point: applying ONE
+                    shared permutation to every channel would merely reorder
+                    the dataset and preserve all cross-variable structure,
+                    i.e. would not be a null at all.
+      "gaussian" -- replaces every non-target channel with Gaussian noise
+                    matched to that channel's own per-band mean/std, so the
+                    input scale reaching the graph mechanism is realistic
+                    and any difference cannot be attributed to scale.
+
+    The target variable's own channel (`target_idx`, copper = index 0) is
+    left UNTOUCHED in every mode. This is deliberate: permuting it too would
+    sever the x->y relationship entirely, so validation loss would plateau
+    at epoch 0 for trivial reasons and "collapse happened" would be an
+    artifact of a model that never trained. Keeping it intact means the
+    LSTM/temporal path still has genuine signal and trains normally, while
+    the graph's neighbours carry no information about the target -- which is
+    precisely the condition under which the graph should either learn
+    nothing (and we can see whether it still collapses the same way) or, if
+    the collapse is input-dependent, behave differently from the real arm.
+    """
+    import torch
+    if mode == "real":
+        return x
+    g = torch.Generator().manual_seed(seed)
+    out = x.clone()
+    n_samples, _, K, N = x.shape
+    for k in range(K):
+        for v in range(N):
+            if v == target_idx:
+                continue
+            if mode == "shuffle":
+                perm = torch.randperm(n_samples, generator=g)
+                out[:, :, k, v] = x[perm, :, k, v]
+            elif mode == "gaussian":
+                chan = x[:, :, k, v]
+                out[:, :, k, v] = torch.randn(
+                    chan.shape, generator=g) * chan.std() + chan.mean()
+            else:
+                raise ValueError(
+                    f"Unknown null-control mode {mode!r}; expected one of "
+                    f"'real', 'shuffle', 'gaussian'.")
+    return out
+
+
+def build_null_control_data(data: Dict, mode: str, seed: int,
+                            batch_size: int) -> Dict:
+    """Returns a copy of `data` whose train/val/test VMD loaders serve the
+    null-control inputs produced by `_make_null_inputs`.
+
+    The transform is applied to ALL THREE splits with the same `mode`. If it
+    were applied to train only, the validation loss -- and therefore early
+    stopping, and therefore which checkpoint ends up being diagnosed --
+    would be measured on a different distribution than the one trained on,
+    making the resulting diagnostic uninterpretable.
+
+    Each split gets its own permutation draw (they have different lengths);
+    `seed` is offset per split so the three draws are independent but the
+    whole construction is exactly reproducible.
+    """
+    from torch.utils.data import DataLoader, TensorDataset
+
+    out = dict(data)
+    for i, split in enumerate(("train", "val", "test")):
+        x, y = _materialize_loader(data[f"{split}_loader"])
+        x_null = _make_null_inputs(x, mode, seed=seed + 1000 * i)
+        # shuffle=True on train only, matching create_datasets' own loaders.
+        out[f"{split}_loader"] = DataLoader(
+            TensorDataset(x_null, y), batch_size=batch_size,
+            shuffle=(split == "train"))
+    out["null_control_mode"] = mode
+    return out
+
+
+def run_null_control_experiment(base_config: dict,
+                                 modes: List[str] = ("real", "shuffle", "gaussian"),
+                                 epochs: int = 40,
+                                 hpo_best_params_path: str = "results/archive_paper1/hpo_best_params.json",
+                                 results_dir: str = "results/robustness/null_control",
+                                 data: Optional[Dict] = None,
+                                 on_cell_done=None) -> List[dict]:
+    """PLAN.md Section 3, bullet 1 -- the null-control experiment.
+
+    Question: is the per-band learned-graph collapse-to-uniform a property
+    of THIS decomposition's structure, or would it happen for ANY input fed
+    to this mechanism? If the "shuffle"/"gaussian" arms collapse identically
+    to the "real" arm, the collapse is downstream of the decomposition
+    choice entirely -- an optimizer/parameterization property of
+    `FrequencyGraphConstructor`, not a finding about VMD bands. That is a
+    stronger and more honest framing of the paper's central result than
+    "the learned graph over VMD bands collapses".
+
+    All three arms run the same architecture, the same tuned
+    hyperparameters, the same seed and the same epoch budget, so their
+    diagnostics are directly comparable row-for-row in the jsonl. The
+    "real" arm is NOT optional -- without it the null arms mean nothing.
+
+    `epochs` defaults to 40 rather than the full 200-epoch budget: this
+    project's own diagnosis puts collapse onset at roughly epoch 20-30 (once
+    validation loss plateaus), so 40 epochs is enough to observe whether
+    onset happens at all while costing a fraction of a full run. Raise it if
+    the real arm has not collapsed by the end.
+
+    `data`: pass a pre-built dataset dict to skip the (expensive) VMD
+    rebuild -- e.g. when chaining this after another experiment in the same
+    session, or to run a small smoke test on synthetic loaders.
+
+    PREREQUISITE STATUS -- FIXED. A smoke test of this function originally
+    returned bitwise-IDENTICAL metrics and diagnostics for all three arms,
+    which traced to a bug in `BandGraphEncoder._batch_edge_index`
+    (`src/models/vmd_mfgnn.py`): its final `.reshape(2, -1)` interleaved the
+    batch axis into the source/target rows, so at any batch_size > 1 the
+    replicated per-sample edges were mis-wired and no cross-variable message
+    ever reached a node within its own sample. With the graph inert, the
+    prediction could not depend on any non-target channel, so "real" and
+    "null" inputs necessarily gave the same answer and the experiment
+    measured nothing. This has since been fixed (`.permute(1, 0, 2)` before
+    the reshape, verified with 0 cross-sample edges at every tested batch
+    size including the project's configured batch_size=32 -- see the git log
+    for the fix commit). This experiment is now meaningful and safe to run
+    for real. See `scripts/verify_gradient_diagnostic.py` STEP 6 for the
+    original bug reproduction, kept for the record.
+    """
+    from .models.vmd_mfgnn import VMDMFGNN
+
+    best_params = _load_tuned_hyperparams(
+        hpo_best_params_path, base_config["model"],
+        base_config["training"]["learning_rate"])
+    seed = base_config["training"]["seed"]
+    jsonl_path = f"{results_dir}/null_control_results.jsonl"
+
+    tuned_config_base = _build_tuned_config(base_config, best_params)
+    tuned_config_base["training"]["epochs"] = epochs
+    batch_size = tuned_config_base["training"]["batch_size"]
+
+    if data is None:
+        from .data_pipeline import create_datasets
+        data = create_datasets(tuned_config_base)
+
+    def artifact_check(row):
+        return _checkpoint_is_complete(row.get("checkpoint_path", ""))
+
+    def run_cell(cell: dict) -> dict:
+        mode = cell["mode"]
+        cfg = copy.deepcopy(tuned_config_base)
+        ckpt_path = f"{results_dir}/checkpoints/null_control_{mode}.pt"
+        cell_data = build_null_control_data(data, mode, seed=seed,
+                                            batch_size=batch_size)
+
+        def ctor():
+            return VMDMFGNN(
+                num_vars=cell_data["num_vars"], num_modes=cell_data["num_modes"],
+                hidden_dim=cfg["model"]["hidden_dim"],
+                num_heads=cfg["model"]["num_heads"],
+                num_gnn_layers=cfg["model"]["num_gnn_layers"],
+                temporal_layers=cfg["model"]["temporal_layers"],
+                dropout=cfg["model"]["dropout"],
+                horizons=cell_data["horizons"], graph_type="learned",
+            )
+
+        # diagnose_final_epoch=True: with an uninformative graph input the
+        # best-val checkpoint can land at a very early epoch, and diagnosing
+        # THAT would measure how little random init has decayed rather than
+        # whether the mechanism collapses. The real arm is diagnosed the same
+        # way so the comparison stays like-for-like.
+        test_metrics, diag, _ = _train_and_diagnose(
+            ctor, ctor, cfg, cell_data, ckpt_path, seed,
+            pred_dir=f"{results_dir}/predictions",
+            pred_prefix=f"null_control_{mode}",
+            diagnose_final_epoch=True)
+        return {"mode": mode, "epochs_budget": epochs,
+                "test_metrics": test_metrics, "diagnostic": diag,
+                "checkpoint_path": ckpt_path}
+
+    cells = [{"mode": m} for m in modes]
+    return run_resumable_grid(cells, key_fn=lambda c: (c["mode"],),
+                               run_fn=run_cell, jsonl_path=jsonl_path,
+                               artifact_check_fn=artifact_check,
+                               on_cell_done=on_cell_done)
