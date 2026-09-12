@@ -229,12 +229,44 @@ class BandGraphEncoder(nn.Module):
 
     def _batch_edge_index(self, edge_index: torch.Tensor, batch_size: int,
                           num_nodes: int) -> torch.Tensor:
-        """Create batched edge_index for B independent graphs."""
+        """Create batched edge_index for B independent graphs.
+
+        CRITICAL FIX (found and verified via direct tensor-value inspection,
+        not just shape-checking, after this bug was suspected to explain why
+        graph_type in {"learned", "correlation"} and even a frozen-random
+        graph all produced statistically indistinguishable ablation results):
+        the previous `.reshape(2, -1)` on the (B, 2, E) offset tensor is WRONG
+        at any batch_size > 1. Memory layout is (sample, row, edge), so a
+        naive reshape to (2, B*E) interleaves ACROSS samples rather than
+        concatenating edges WITHIN each sample: at B=2, N=4, edges
+        {0->1,1->2,2->3} for a single graph, the old code produced batched
+        edges (0->4),(1->5),(2->6),(1->5),(2->6),(3->7) -- i.e. "node k in
+        sample 0" wired to "node k in sample 1", never a real within-sample
+        edge, for 100% of edges at every even batch size (the project's
+        actual configured batch_size is 32). `.permute(1, 0, 2)` before the
+        reshape fixes this: edges are correctly grouped per-sample, each
+        sample's nodes only ever connect to other nodes in that SAME sample,
+        offset into the correct node-index block.
+
+        This means every archived result produced by this codebase before
+        this fix -- main results, ablation, HPO, the robustness suite, the
+        graph-fix experiment, all of it -- ran with a graph mechanism that
+        never propagated real cross-variable structure at batch_size > 1;
+        GAT effectively saw isolated nodes (plus its own added self-loops)
+        rather than the intended per-band adjacency. This is a DIFFERENT and
+        more fundamental issue than the isotropic-embedding-norm-collapse
+        finding (which is about the adjacency VALUES collapsing during
+        training, measured directly from saved embeddings, independent of
+        this batching bug) -- but it directly confounds any claim about
+        WHETHER the graph mechanism could have mattered for task performance,
+        since the graph was never correctly wired into the forward pass to
+        begin with, regardless of what values it computed.
+        """
         offsets = torch.arange(batch_size, device=edge_index.device) * num_nodes
         offsets = offsets.unsqueeze(1).expand(-1, edge_index.size(1))  # (B, E)
         batch_ei = edge_index.unsqueeze(0).expand(batch_size, -1, -1)  # (B, 2, E)
         batch_ei = batch_ei + offsets.unsqueeze(1)  # (B, 2, E)
-        return batch_ei.reshape(2, -1)  # (2, B*E)
+        return batch_ei.permute(1, 0, 2).reshape(2, -1)  # (2, B*E) -- per-sample edges, correctly grouped
 
 
 class FrequencyBandModule(BandGraphEncoder):
