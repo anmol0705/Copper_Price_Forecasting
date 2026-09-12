@@ -65,3 +65,27 @@ VMD-MFGNN v2 — Outstanding TODOs
    latency, start early), abstract character-limit compliance for the CURRENT
    (much-expanded) draft — recheck this now that the paper has grown
    substantially since the length was last verified.
+
+8. [OPEN, FUTURE WORK, not blocking current paper] Expand paper1's N=8
+   feature set to test whether the isotropic-collapse finding is an
+   artifact of a too-narrow/low-signal feature set rather than (or in
+   addition to) the weight-decay/gradient mechanism diagnosed in the paper.
+   Motivated by a real reviewer risk: with only 8 market-price proxies and
+   no copper-demand fundamentals, a reviewer could argue the negative
+   result (RQ0 no-model-beats-naive, and the per-band graph never learning
+   differentiated structure) is a lack-of-signal-in-the-inputs problem, not
+   a property of the architecture. Paper1's own current 8 variables are all
+   liquid daily market-price series (copper, aluminum, gold, oil, DXY,
+   S&P 500, VIX, US10Y) — see QNA_LOG.md's first Phase-1 entry for the full
+   reasoning. paper2/docs/research_plan_CP1.md's planned feature blocks are
+   the natural template for what to add: macro-financial (FRED real yields
+   DFII10, credit spreads BAMLH0A0HYM2, China PMI), carry/term-structure,
+   and volatility/regime (GARCH-family, HAR-RV components) blocks. Concrete
+   next step, when picked up: extend N beyond 8 with a subset of these,
+   re-verify leakage-safety on the new sources (paper2's plan already
+   requires a causal-leakage unit test for every new feature block — reuse
+   that check), and re-run the collapse diagnostic (Section V of paper1) at
+   the larger N to see whether the collapse persists. Not started; this is
+   a real experiment, not a paper1 text edit — would need its own Colab run
+   and is a meaningfully larger scope change than anything else in this
+   TODO list.
