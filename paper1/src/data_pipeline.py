@@ -11,8 +11,16 @@ from torch.utils.data import DataLoader, Dataset
 
 logger = logging.getLogger(__name__)
 
-# Locked 8-variable scope (see vmd-mfgnn-protocol/SKILL.md), all sourced via
-# Yahoo Finance only. FRED and BDI are explicitly out of scope.
+# SCOPE (current): 15 variables -- 11 via Yahoo Finance (TICKERS below) + 4 via
+# FRED (FRED_DAILY_SERIES / FRED_MONTHLY_SERIES below, pulled in
+# DataDownloader._download_fred_extensions()). This SUPERSEDES the previously
+# locked 8-variable, Yahoo-Finance-only scope described in
+# docs/archive/vmd-mfgnn-protocol-SKILL.md (which said "FRED and BDI are
+# explicitly out of scope") -- see paper1/PLAN.md Section 1 for the N=8 -> N=15
+# expansion rationale and the per-variable verification table (originally
+# planned as N=16 with aluminum/ALI=F included; ALI=F was subsequently removed
+# for a date-range data-quality reason -- see the TICKERS dict below). The
+# historical notes below are retained as history, not as current scope.
 #
 # Note on zinc/nickel (dropped 2026-08-07): there is no standalone
 # COMEX/NYMEX-style "=F" futures contract for zinc or nickel on Yahoo
@@ -32,16 +40,85 @@ logger = logging.getLogger(__name__)
 # up-to-date scope table.
 TICKERS = {
     "copper": "HG=F",
-    "aluminum": "ALI=F",
+    # "aluminum": "ALI=F" -- REMOVED (see PLAN.md Section 4 revision). Verified
+    # this session: ALI=F's actual Yahoo Finance history starts 2014-05-06, not
+    # 2010, despite every other ticker in this panel (including all four newly
+    # added below) starting 2010-01-04. Because the pipeline drops any row with
+    # a NaN in any column (`ffill(limit=5).dropna()` below), ALI=F's late start
+    # was silently truncating the ENTIRE panel to 2014-2025 -- a ~4.3-year,
+    # ~25% loss -- while this paper's manuscript text (main.tex) has stated
+    # "daily data from January 2010" and "~4,000 trading days" throughout, and
+    # the 2010-2019/2020-2021/2022-2025 train/val/test splits are referenced
+    # extensively across the whole document. This is a pre-existing bug, not
+    # something introduced by the N=8->15 expansion (paper2's own
+    # cubench_data_availability.md / STATUS.md independently found and flagged
+    # the same 2014 start date for this exact ticker on 2026-08-19, and worked
+    # around it differently for that project's tree-based models, which can
+    # tolerate missing values in a way this project's VMD+neural pipeline
+    # cannot). Rather than shift the entire panel to 2014+ (which would force a
+    # rewrite of every date, split boundary, and epoch/row-count figure in the
+    # finished manuscript), aluminum is dropped entirely, restoring the full,
+    # correct 2010-2025 range with zero cascading text changes. See
+    # main.tex's Limitations section for the disclosed reason.
     "gold": "GC=F",
     "oil": "CL=F",
     "dxy": "DX-Y.NYB",
     "sp500": "^GSPC",
     "vix": "^VIX",
     "us10y": "^TNX",
+    # --- Expanded scope (added post-N=8 review; see docs/todo.txt item 8 and
+    # QNA_LOG.md's feature-set-expansion entries for the reviewer risk this
+    # closes: the original 8 variables are all liquid market-price proxies,
+    # none is a copper-demand-specific signal). All four below were verified
+    # via direct yfinance pulls against copper's own 2010-01-04 start date --
+    # zero panel truncation for any of them (see docs/cubench_data_availability.md
+    # for the shared verification methodology reused here). Two more FRED-
+    # sourced macro series (BAA10Y, DFII10) and two PIT-joined monthly FRED
+    # series (PPIACO, INDPRO) are pulled separately in
+    # DataDownloader._download_fred_extensions(), not via this yfinance TICKERS
+    # dict, since FRED requires a different access path (see fred_utils.py).
+    "silver": "SI=F",       # r=0.44 vs copper returns, most sign-stable of the
+                             # metals tested (paper2 correlation_feasibility_findings.md)
+    "clp": "CLP=X",          # Chilean peso: Chile is the world's largest copper
+                             # producer; a genuine producer-currency signal, not
+                             # a market-price proxy. Verified 4,164 obs, 0.22% gap.
+    "fcx": "FCX",             # Freeport-McMoRan: largest US-listed copper miner,
+                             # a genuine copper-supply-side equity signal.
+                             # Verified 4,198 rows, 2010-01-04 start (matches HG=F).
+    "fxi": "FXI",              # iShares China Large-Cap ETF: a daily, tradeable
+                             # China-demand proxy -- directly answers the "no
+                             # demand-side signal" reviewer risk. Verified 4,198
+                             # rows, 2010-01-04 start, zero truncation. CPER
+                             # (copper futures ETF) and COPX/MCHI (shorter
+                             # history, redundant with FCX/FXI) were considered
+                             # and rejected -- see QNA_LOG.md.
 }
 
-VARIABLE_NAMES = list(TICKERS.keys())
+# FRED series pulled outside the yfinance TICKERS dict above (different access
+# path -- see fred_utils.py). BAA10Y and DFII10 are daily, merged directly on
+# date. PPIACO and INDPRO are monthly and MUST be point-in-time joined with a
+# publication lag (fred_utils.pit_join_monthly), never reindexed+forward-filled,
+# to avoid leaking a not-yet-published macro print into an earlier trading day.
+FRED_DAILY_SERIES = ["baa10y", "dfii10"]   # column name -> FRED series ID (upper)
+FRED_MONTHLY_SERIES = ["ppiaco", "indpro"]  # PIT-joined; publication lag in fred_utils.PUBLICATION_LAG_DAYS
+
+# FRED series are pulled from this fixed start regardless of the panel's own
+# start date. Two reasons, both load-bearing:
+#   1. fred_utils.EXPECTED_FRED_FIRST_OBS asserts PPIACO/INDPRO reach back to
+#      2009-01-01; FRED's `cosd=` clamps the returned first observation, so
+#      passing the panel's 2010-01-01 start would make verify_fred_coverage()
+#      raise a false coverage regression.
+#   2. The PIT join needs at least one monthly print whose publication date
+#      (month-end + lag) precedes the panel's first trading day, or the panel
+#      would open with ~1-2 months of NaN in the monthly columns.
+FRED_HISTORY_START = "2009-01-01"
+
+# Final panel variable order: the 12 yfinance tickers first (so the original 8
+# keep indices 0-7 and the target `copper` stays at index 0), then the 4 FRED
+# columns. build_dataset() filters `prices` down to exactly this list, so a
+# column missing here is silently dropped from the model's input -- keep it in
+# sync with TICKERS + the FRED lists above.
+VARIABLE_NAMES = list(TICKERS.keys()) + FRED_DAILY_SERIES + FRED_MONTHLY_SERIES
 
 
 class DataDownloader:
@@ -56,6 +133,22 @@ class DataDownloader:
             logger.info(f"Loading cached data from {self.cache_path}")
             df = pd.read_csv(self.cache_path, index_col=0, parse_dates=True)
             if len(df) > 100:
+                # Guard against a stale pre-N=15 cache (12 yfinance columns
+                # including aluminum, or the original 8) silently bypassing
+                # the FRED pull below and training on a narrower/wrong panel
+                # than the paper claims.
+                stale = [c for c in VARIABLE_NAMES if c not in df.columns]
+                unexpected = [c for c in df.columns if c not in VARIABLE_NAMES]
+                if stale or unexpected:
+                    raise ValueError(
+                        f"Cached price file {self.cache_path} does not match the "
+                        f"current N=15 scope. Missing: {stale or 'none'}. "
+                        f"Unexpected (e.g. a removed 'aluminum' column from an "
+                        f"earlier N=16 cache): {unexpected or 'none'}. This is a "
+                        f"stale cache from an earlier scope -- delete it and re-run "
+                        f"so the current 15-variable panel is actually rebuilt "
+                        f"(see PLAN.md Section 1)."
+                    )
                 return df
 
         import yfinance as yf
@@ -98,13 +191,148 @@ class DataDownloader:
             )
 
         df = pd.DataFrame(frames)
+
+        # One verified bad tick, corrected explicitly rather than via a general
+        # outlier scrubber (which risks silently altering real large moves
+        # elsewhere in the panel). CLP=X (Chilean peso) on 2016-12-22 reads 5.0
+        # against a ~670 neighborhood on every adjacent trading day -- a data
+        # error, not a real 99%+ single-day FX move (Chile did not experience
+        # any such event in December 2016). This date falls inside the training
+        # split (train_end: 2019-12-31), so left uncorrected it would corrupt
+        # both the train-fitted normalization statistics `CopperDataset`
+        # derives and the VMD decomposition, which would smear the spike across
+        # all five frequency bands for this node. Corrected via linear
+        # interpolation from the immediate neighboring trading days.
+        if "clp" in df.columns:
+            bad_date = pd.Timestamp("2016-12-22")
+            if bad_date in df.index:
+                before = df.loc[:bad_date, "clp"].iloc[:-1].last_valid_index()
+                after = df.loc[bad_date:, "clp"].iloc[1:].first_valid_index()
+                if before is not None and after is not None:
+                    v_before, v_after = df.loc[before, "clp"], df.loc[after, "clp"]
+                    frac = (bad_date - before).days / (after - before).days
+                    interpolated = v_before + frac * (v_after - v_before)
+                    logger.warning(
+                        f"  clp (CLP=X): correcting verified bad tick on "
+                        f"{bad_date.date()} ({df.loc[bad_date, 'clp']:.4f} -> "
+                        f"{interpolated:.4f}, linearly interpolated between "
+                        f"{before.date()}={v_before:.4f} and {after.date()}={v_after:.4f})"
+                    )
+                    df.loc[bad_date, "clp"] = interpolated
+
         df = df.ffill(limit=5).dropna()
         df.index.name = "date"
+
+        # Expand the 11-variable yfinance panel (12 tickers minus the removed
+        # ALI=F -- see TICKERS above) to the full 15-variable scope by merging
+        # in the 4 FRED series. Deliberately AFTER the dropna() above: the
+        # monthly PIT columns are NaN before their first publication date, and
+        # dropping on them would silently delete leading trading days.
+        df = self._download_fred_extensions(df)
 
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(self.cache_path)
         logger.info(f"Saved {len(df)} rows to {self.cache_path}")
         return df
+
+    def _download_fred_extensions(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Merge the 4 FRED-sourced variables onto the yfinance price panel.
+
+        `df` is the merged yfinance DataFrame (DatetimeIndex, one column per
+        TICKERS entry). Returns the same frame with FRED_DAILY_SERIES and
+        FRED_MONTHLY_SERIES appended as columns, same index, SAME ROW COUNT.
+
+        Daily series (BAA10Y, DFII10) are merged straight onto the trading
+        calendar with a backward as-of join (FRED publishes these same-day, so
+        no publication-lag handling is needed; the backward direction only
+        carries the last known value across a market holiday FRED didn't quote).
+
+        Monthly series (PPIACO, INDPRO) go through fred_utils.pit_join_monthly()
+        -- a point-in-time join keyed on (reference month end + publication lag)
+        -- and NOT reindex().ffill(), which would leak a macro print into
+        trading days before it was actually published.
+
+        Fail-loudly, matching download()'s existing convention for missing
+        yfinance tickers: any fetch failure, coverage regression, missing/all-NaN
+        column, or row-count change raises rather than quietly yielding a panel
+        with fewer than 16 variables.
+        """
+        from . import fred_utils
+
+        n_before = len(df)
+        tz_aware = getattr(df.index, "tz", None) is not None
+        idx_name = df.index.name or "date"
+
+        flat = df.copy()
+        if tz_aware:
+            flat.index = flat.index.tz_localize(None)
+        flat = flat.reset_index().rename(columns={idx_name: "date"})
+        flat["date"] = pd.to_datetime(flat["date"])
+        flat = flat.sort_values("date").reset_index(drop=True)
+
+        # --- Daily FRED series: plain date-aligned (backward as-of) merge -----
+        for col in FRED_DAILY_SERIES:
+            series_id = col.upper()
+            raw = fred_utils.fetch_fred_series_curl(
+                series_id, cosd=FRED_HISTORY_START, coed=self.end)
+            first_obs = fred_utils.verify_fred_coverage(series_id, raw)
+            logger.info(f"  FRED {series_id} (daily): {len(raw)} obs, first {first_obs}")
+            flat = pd.merge_asof(
+                flat,
+                raw[["date", series_id]].sort_values("date"),
+                on="date",
+                direction="backward",
+                allow_exact_matches=True,
+            ).rename(columns={series_id: col})
+
+        # --- Monthly FRED series: point-in-time join with publication lag ----
+        for col in FRED_MONTHLY_SERIES:
+            series_id = col.upper()
+            raw = fred_utils.fetch_fred_series_curl(
+                series_id, cosd=FRED_HISTORY_START, coed=self.end)
+            first_obs = fred_utils.verify_fred_coverage(series_id, raw)
+            logger.info(
+                f"  FRED {series_id} (monthly, PIT +"
+                f"{fred_utils.PUBLICATION_LAG_DAYS[series_id]}d): "
+                f"{len(raw)} obs, first {first_obs}")
+            flat = fred_utils.pit_join_monthly(flat, raw, series_id)
+            # pit_join_monthly adds an `available_from` audit column; drop it so
+            # the second call doesn't collide into available_from_x/_y.
+            flat = flat.drop(columns=["available_from"]).rename(columns={series_id: col})
+
+        merged = flat.set_index("date")
+        merged.index.name = "date"
+        if tz_aware:
+            merged.index = merged.index.tz_localize(df.index.tz)
+
+        # --- Fail-loudly validation ------------------------------------------
+        fred_cols = FRED_DAILY_SERIES + FRED_MONTHLY_SERIES
+        problems = []
+        if len(merged) != n_before:
+            problems.append(
+                f"row count changed from {n_before} to {len(merged)} (an as-of/PIT "
+                f"merge is a left join and must never add or drop trading days)")
+        for col in fred_cols:
+            if col not in merged.columns:
+                problems.append(f"{col}: column missing after merge")
+            elif merged[col].isna().all():
+                problems.append(f"{col}: all-NaN after merge")
+        if problems:
+            raise ValueError(
+                f"DataDownloader._download_fred_extensions() produced an invalid "
+                f"panel: {'; '.join(problems)}. Refusing to proceed with fewer than "
+                f"{len(VARIABLE_NAMES)} usable variables -- see PLAN.md Section 1."
+            )
+
+        for col in fred_cols:
+            n_nan = int(merged[col].isna().sum())
+            if n_nan:
+                logger.warning(
+                    f"  {col}: {n_nan}/{len(merged)} NaN rows (expected only at the "
+                    f"panel head, before the series' first publication date)")
+        logger.info(f"FRED extensions merged: panel now {merged.shape[1]} variables, "
+                    f"{len(merged)} rows")
+        return merged
 
 
 class VMDDecomposer:
