@@ -160,3 +160,16 @@ hpo:
   # the wider pass is invoked explicitly, out-of-band, by the notebook.
   search_weight_decay: false
   search_batch_size: false
+  # Number of Optuna trials to run CONCURRENTLY (a thread pool within one
+  # process, not multiprocessing) -- see src/hpo.py's run_hpo docstring for
+  # the full reasoning and the per-trial-DataLoader / per-trial-seed / Drive-
+  # sync-lock changes that make n_jobs>1 safe. 4 chosen from a real observed
+  # measurement this session: a single trial used ~2.3GB on a 16GB Colab T4,
+  # so 4 concurrent trials (~9.2GB) leaves comfortable headroom for CUDA
+  # context overhead and the larger hidden_dim=128 trials in the search
+  # space, without needing to watch memory live. Real speedup is sub-linear
+  # (concurrent trials share one CUDA default stream per device, so this
+  # mainly overlaps each trial's CPU/data-loading overhead rather than
+  # parallelizing GPU compute itself) but meaningful at this project's model
+  # scale, where per-epoch time is overhead-dominated, not GPU-compute-bound.
+  n_jobs: 4

@@ -25,8 +25,27 @@ def run_hpo(config: dict, data: Dict, n_trials: int = 15, trial_epochs: int = 25
             trials_csv_filename: str = "hpo_trials.csv",
             storage_path: Optional[str] = None,
             study_name: str = "vmd_mfgnn_hpo",
-            on_trial_done=None) -> dict:
+            on_trial_done=None,
+            n_jobs: int = 1) -> dict:
     """Run an Optuna study to tune VMD-MFGNN hyperparameters.
+
+    n_jobs: number of trials to run CONCURRENTLY (Optuna's study.optimize
+    n_jobs, a thread pool within this one process -- not multiprocessing).
+    Default 1 preserves the exact original sequential behavior. Safe to
+    raise when a single trial uses only a small fraction of GPU memory (each
+    trial constructs its own model/optimizer/config, so there is no shared
+    mutable training state between concurrent trials -- see the per-trial
+    DataLoader construction below, added specifically to make n_jobs>1 safe).
+    Real speedup is sub-linear (concurrent CUDA kernels from different
+    threads share one default stream per device, so this mainly overlaps
+    each trial's CPU-side/data-loading overhead rather than parallelizing
+    GPU compute itself), but meaningful at this model's small scale, where
+    per-epoch wall-clock time is overhead-dominated rather than GPU-compute-
+    bound (observed: ~2.3GB used on a 16GB GPU). Optuna's SQLite storage can
+    hit transient "database is locked" errors under heavy concurrent trial
+    completion -- tolerable at n_jobs in the single digits (one process, not
+    multiple), not recommended much higher without switching to a real
+    database backend.
 
     Base search space (always on, unchanged from the original 4-trial-run
     implementation): hidden_dim, learning_rate, dropout, num_heads,
@@ -94,6 +113,22 @@ def run_hpo(config: dict, data: Dict, n_trials: int = 15, trial_epochs: int = 25
     batch_size_choices = [16, 32, 64]
 
     def objective(trial: "optuna.Trial") -> float:
+        import torch
+        # Distinct per-trial seed: with n_jobs>1, multiple trials' model
+        # construction/training interleave on the same process, all reading
+        # and advancing torch's ONE global RNG -- sharing that RNG across
+        # concurrent threads is not a crash risk (PyTorch's RNG is
+        # internally locked) but does make which trial "sees" which random
+        # draw non-deterministic across runs. This does not need to be
+        # solved for HPO search validity (Optuna's own TPE sampling and
+        # pruning are already stochastic across trials, and no downstream
+        # code depends on any single trial's exact reproducibility the way
+        # the final ablation/main-results runs do), but seeding per-trial
+        # at least keeps each trial's OWN init deterministic relative to its
+        # own trial number, rather than leaving it to whatever the global
+        # RNG happened to be mid-interleave.
+        torch.manual_seed(seed + trial.number)
+
         hidden_dim = trial.suggest_categorical("hidden_dim", hidden_dim_choices)
         num_heads = trial.suggest_categorical("num_heads", num_heads_choices)
         # VMDMFGNN's GAT layer does hidden_dim // num_heads per head; keep the
@@ -127,13 +162,21 @@ def run_hpo(config: dict, data: Dict, n_trials: int = 15, trial_epochs: int = 25
         else:
             trial_num_vars, trial_num_modes = num_vars, num_modes
 
-        if search_batch_size:
-            bs = trial.suggest_categorical("batch_size", batch_size_choices)
-            train_loader = DataLoader(trial_data["train_ds"], batch_size=bs, shuffle=True)
-            val_loader = DataLoader(trial_data["val_ds"], batch_size=bs)
-        else:
-            train_loader = trial_data["train_loader"]
-            val_loader = trial_data["val_loader"]
+        # Always build FRESH DataLoaders scoped to this trial, never reuse
+        # trial_data["train_loader"]/["val_loader"] directly. Those are ONE
+        # shared DataLoader object built once in create_datasets(); with
+        # n_jobs==1 reusing them was harmless, but with n_jobs>1 concurrent
+        # trials would call iter() on the SAME DataLoader from different
+        # threads simultaneously -- shuffle=True's RandomSampler draws its
+        # permutation from torch's shared global generator at iterator-
+        # creation time, so concurrent iter() calls on one shared instance
+        # race on that shared generator state. A fresh DataLoader per trial
+        # (cheap -- it's a thin wrapper around the same underlying Dataset,
+        # not a data copy) removes the shared-object hazard entirely.
+        bs = trial.suggest_categorical("batch_size", batch_size_choices) \
+            if search_batch_size else base_batch_size
+        train_loader = DataLoader(trial_data["train_ds"], batch_size=bs, shuffle=True)
+        val_loader = DataLoader(trial_data["val_ds"], batch_size=bs)
 
         model = VMDMFGNN(
             num_vars=trial_num_vars, num_modes=trial_num_modes,
@@ -192,14 +235,25 @@ def run_hpo(config: dict, data: Dict, n_trials: int = 15, trial_epochs: int = 25
         # at most the in-flight trial rather than the whole study database.
         callbacks = None
         if on_trial_done is not None:
+            import threading
+            # With n_jobs>1, multiple trials can finish within moments of
+            # each other, firing this callback from different threads
+            # concurrently. sync_to_drive's shutil.copytree(dirs_exist_ok=True)
+            # is not safe against overlapping concurrent invocations against
+            # the same destination tree -- serialize with a lock rather than
+            # let two Drive syncs race.
+            _sync_lock = threading.Lock()
+
             def _cb(study_, trial_):
                 try:
-                    on_trial_done(study_, trial_)
+                    with _sync_lock:
+                        on_trial_done(study_, trial_)
                 except Exception as e:  # a Drive hiccup must not kill the study
                     logger.warning(f"on_trial_done raised {type(e).__name__}: {e} "
                                    f"-- ignored, HPO continues.")
             callbacks = [_cb]
-        study.optimize(objective, n_trials=remaining, callbacks=callbacks)
+        study.optimize(objective, n_trials=remaining, callbacks=callbacks,
+                        n_jobs=n_jobs)
     else:
         logger.info("HPO target trial count already reached; nothing to run.")
 
