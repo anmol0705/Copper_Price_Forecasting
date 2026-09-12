@@ -186,16 +186,30 @@ class TransformerBaseline(TorchBaseline):
 # ============================================================================
 
 class VMDLSTMBaseline(TorchBaseline):
-    """VMD-LSTM: separate LSTM per mode, predictions summed (Liu et al. 2019)."""
+    """VMD-LSTM (Liu, Wang, Guo et al. 2020, "Non-ferrous metals price
+    forecasting based on variational mode decomposition and LSTM network",
+    *Resources Policy*): one LSTM per VMD mode, per-mode predictions summed
+    back into the forecast.
+
+    **Univariate by design.** Liu et al.'s method decomposes the *target*
+    price series alone and fits an independent LSTM to each resulting mode;
+    there are no exogenous variables in the loop. An earlier version of this
+    class fed all `N` variables jointly into each per-mode LSTM, which made it
+    a multivariate model the cited paper does not describe -- a
+    mischaracterisation, not merely a simplification. Corrected here: each
+    per-mode LSTM consumes the copper channel of its own mode only
+    (`input_size=1`). Copper is variable index 0 of the mode tensor, the same
+    convention `ARIMABaseline._loader_to_series` relies on.
+    """
 
     def __init__(self, config: dict):
         super().__init__(config)
-        nv = config["num_vars"]
         K = config.get("num_modes", 5)
         hd = config.get("hidden_dim", 64)
         self.K = K
+        self.target_idx = int(config.get("target_var_idx", 0))
         self.lstms = nn.ModuleList([
-            nn.LSTM(nv, hd, 2, batch_first=True) for _ in range(K)
+            nn.LSTM(1, hd, 2, batch_first=True) for _ in range(K)
         ])
         self.heads = nn.ModuleList([
             nn.ModuleList([nn.Linear(hd, 1) for _ in self.horizons])
@@ -203,11 +217,12 @@ class VMDLSTMBaseline(TorchBaseline):
         ])
 
     def _forward_flat(self, x):
-        # x: (B, T, K, N)
+        # x: (B, T, K, N) -- only the target variable's own modes are used.
         B, T, K, N = x.shape
+        ti = self.target_idx
         preds = torch.zeros(B, len(self.horizons), device=x.device)
         for k in range(self.K):
-            mode_x = x[:, :, k, :]  # (B, T, N)
+            mode_x = x[:, :, k, ti:ti + 1]  # (B, T, 1)
             out, _ = self.lstms[k](mode_x)
             h = out[:, -1, :]
             mode_pred = torch.cat([self.heads[k][i](h) for i in range(len(self.horizons))], dim=-1)
@@ -330,6 +345,473 @@ class SimpleMTGNN(TorchBaseline):
         h_flat = h_flat.reshape(B, N, self.hd, T)
         copper_h = h_flat[:, 0, :, -1]  # (B, hd)
         return self.output_proj(copper_h)
+
+
+# ---------------------------------------------------------------------------
+# Faithful MTGNN reproduction (Wu et al., KDD 2020)
+#
+# The five private classes below (`_MTGNNNConv` ... `_MTGNNLayerNorm`) and the
+# `_MTGNNNet` backbone are direct ports of the official implementation at
+# https://github.com/nnzhan/MTGNN (`layer.py` and `net.py`, `master` branch,
+# maintained by the paper's lead author). They are kept byte-for-byte
+# equivalent to the originals in every computation; the only edits are
+# mechanical Python-style renames (snake_case classes -> CamelCase private
+# names) and two device-handling changes that are behaviour-preserving:
+#   * `graph_constructor` took a `device` argument and allocated its top-k mask
+#     on it; here the mask is allocated on the adjacency's own device, so the
+#     module moves correctly under `TorchBaseline.fit()`'s `self.to(device)`.
+#   * `gtnet.idx` was a plain tensor attribute; here it is a registered buffer
+#     for the same reason.
+# ---------------------------------------------------------------------------
+
+class _MTGNNNConv(nn.Module):
+    """MTGNN `nconv`: one-hop graph propagation over the node axis."""
+
+    def forward(self, x, A):
+        return torch.einsum("ncwl,vw->ncvl", (x, A)).contiguous()
+
+
+class _MTGNNLinear(nn.Module):
+    """MTGNN `linear`: 1x1 conv acting as a channel-wise MLP."""
+
+    def __init__(self, c_in, c_out, bias=True):
+        super().__init__()
+        self.mlp = nn.Conv2d(c_in, c_out, kernel_size=(1, 1), padding=(0, 0),
+                             stride=(1, 1), bias=bias)
+
+    def forward(self, x):
+        return self.mlp(x)
+
+
+class _MTGNNMixProp(nn.Module):
+    """MTGNN `mixprop`: mix-hop propagation.
+
+    Runs `gdep` information-propagation steps with the retain ratio `alpha`
+    (`h <- alpha * x + (1 - alpha) * A_norm h`), *keeps every intermediate hop*,
+    concatenates all `gdep + 1` of them along the channel axis, and mixes them
+    with a single 1x1 conv (the "information selection" step). This is MTGNN's
+    key GCN innovation and is NOT equivalent to stacking `gdep` plain GCN
+    layers, which would discard the lower-order hops.
+    """
+
+    def __init__(self, c_in, c_out, gdep, dropout, alpha):
+        super().__init__()
+        self.nconv = _MTGNNNConv()
+        self.mlp = _MTGNNLinear((gdep + 1) * c_in, c_out)
+        self.gdep = gdep
+        self.dropout = dropout
+        self.alpha = alpha
+
+    def forward(self, x, adj):
+        adj = adj + torch.eye(adj.size(0), device=x.device)
+        d = adj.sum(1)
+        h = x
+        out = [h]
+        a = adj / d.view(-1, 1)
+        for _ in range(self.gdep):
+            h = self.alpha * x + (1 - self.alpha) * self.nconv(h, a)
+            out.append(h)
+        ho = torch.cat(out, dim=1)
+        return self.mlp(ho)
+
+
+class _MTGNNDilatedInception(nn.Module):
+    """MTGNN `dilated_inception`: four parallel dilated 1-D convolutions with
+    kernel sizes {2, 3, 6, 7}, each producing `cout / 4` channels, truncated to
+    the shortest output length and concatenated. Distinct from (and strictly
+    richer than) a stack of single-kernel dilated causal convs.
+    """
+
+    kernel_set = [2, 3, 6, 7]
+
+    def __init__(self, cin, cout, dilation_factor=2):
+        super().__init__()
+        assert cout % len(self.kernel_set) == 0, (
+            f"MTGNN dilated_inception requires out-channels divisible by "
+            f"{len(self.kernel_set)}, got {cout}")
+        self.tconv = nn.ModuleList()
+        cout = int(cout / len(self.kernel_set))
+        for kern in self.kernel_set:
+            self.tconv.append(
+                nn.Conv2d(cin, cout, (1, kern), dilation=(1, dilation_factor)))
+
+    def forward(self, input):
+        x = [conv(input) for conv in self.tconv]
+        for i in range(len(self.kernel_set)):
+            x[i] = x[i][..., -x[-1].size(3):]
+        return torch.cat(x, dim=1)
+
+
+class _MTGNNGraphConstructor(nn.Module):
+    """MTGNN `graph_constructor`: the uni-directional saturated top-k graph.
+
+    Two node-embedding tables are passed through their own linear maps and a
+    *saturating* `tanh(alpha * .)` nonlinearity, combined ANTI-SYMMETRICALLY
+    (`M1 M2^T - M2 M1^T`) so that at most one direction of each pair survives,
+    saturated again by `relu(tanh(alpha * a))`, and finally sparsified by a
+    hard top-k mask per row. The `alpha` (`tanhalpha`, default 3) controls the
+    saturation rate, which is what makes this "saturated top-k" rather than
+    this project's plain `softmax(relu(E1 E2^T))` top-k.
+
+    Note (faithfulness, deliberate): the official code adds uniform jitter
+    `adj + rand_like(adj) * 0.01` *inside* the top-k selection, and does so in
+    both train and eval mode. This is ported unchanged, so predictions from
+    this baseline are mildly non-deterministic at inference. It is kept rather
+    than "fixed" because the point of this class is fidelity to the published
+    implementation.
+    """
+
+    def __init__(self, nnodes, k, dim, alpha=3, static_feat=None):
+        super().__init__()
+        self.nnodes = nnodes
+        if static_feat is not None:
+            xd = static_feat.shape[1]
+            self.lin1 = nn.Linear(xd, dim)
+            self.lin2 = nn.Linear(xd, dim)
+        else:
+            self.emb1 = nn.Embedding(nnodes, dim)
+            self.emb2 = nn.Embedding(nnodes, dim)
+            self.lin1 = nn.Linear(dim, dim)
+            self.lin2 = nn.Linear(dim, dim)
+        self.k = k
+        self.dim = dim
+        self.alpha = alpha
+        self.static_feat = static_feat
+
+    def _nodevecs(self, idx):
+        if self.static_feat is None:
+            nodevec1 = self.emb1(idx)
+            nodevec2 = self.emb2(idx)
+        else:
+            nodevec1 = self.static_feat[idx, :]
+            nodevec2 = nodevec1
+        nodevec1 = torch.tanh(self.alpha * self.lin1(nodevec1))
+        nodevec2 = torch.tanh(self.alpha * self.lin2(nodevec2))
+        return nodevec1, nodevec2
+
+    def forward(self, idx):
+        nodevec1, nodevec2 = self._nodevecs(idx)
+        a = (torch.mm(nodevec1, nodevec2.transpose(1, 0))
+             - torch.mm(nodevec2, nodevec1.transpose(1, 0)))
+        adj = F.relu(torch.tanh(self.alpha * a))
+        mask = torch.zeros(idx.size(0), idx.size(0), device=adj.device)
+        mask.fill_(float("0"))
+        s1, t1 = (adj + torch.rand_like(adj) * 0.01).topk(self.k, 1)
+        mask.scatter_(1, t1, s1.fill_(1))
+        return adj * mask
+
+    def full_a(self, idx):
+        """Dense (un-sparsified) adjacency, MTGNN's `fullA` -- for diagnostics."""
+        nodevec1, nodevec2 = self._nodevecs(idx)
+        a = (torch.mm(nodevec1, nodevec2.transpose(1, 0))
+             - torch.mm(nodevec2, nodevec1.transpose(1, 0)))
+        return F.relu(torch.tanh(self.alpha * a))
+
+
+class _MTGNNLayerNorm(nn.Module):
+    """MTGNN's node-indexed LayerNorm (`layer.py::LayerNorm`)."""
+
+    def __init__(self, normalized_shape, eps=1e-5, elementwise_affine=True):
+        super().__init__()
+        if isinstance(normalized_shape, int):
+            normalized_shape = (normalized_shape,)
+        self.normalized_shape = tuple(normalized_shape)
+        self.eps = eps
+        self.elementwise_affine = elementwise_affine
+        if self.elementwise_affine:
+            self.weight = nn.Parameter(torch.Tensor(*self.normalized_shape))
+            self.bias = nn.Parameter(torch.Tensor(*self.normalized_shape))
+        else:
+            self.register_parameter("weight", None)
+            self.register_parameter("bias", None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        if self.elementwise_affine:
+            nn.init.ones_(self.weight)
+            nn.init.zeros_(self.bias)
+
+    def forward(self, input, idx):
+        if self.elementwise_affine:
+            return F.layer_norm(input, tuple(input.shape[1:]),
+                                self.weight[:, idx, :], self.bias[:, idx, :],
+                                self.eps)
+        return F.layer_norm(input, tuple(input.shape[1:]), self.weight,
+                            self.bias, self.eps)
+
+
+class _MTGNNNet(nn.Module):
+    """Port of `net.py::gtnet` -- the full MTGNN backbone.
+
+    Defaults are exactly the official repo's `net.py` signature defaults plus
+    `train_multi_step.py`'s argparse default for `gcn_depth` (=2, which is
+    positional in `gtnet.__init__` and so has no signature default).
+    """
+
+    def __init__(self, gcn_true=True, build_a_true=True, gcn_depth=2,
+                 num_nodes=16, predefined_A=None, static_feat=None,
+                 dropout=0.3, subgraph_size=20, node_dim=40,
+                 dilation_exponential=1, conv_channels=32,
+                 residual_channels=32, skip_channels=64, end_channels=128,
+                 seq_length=12, in_dim=2, out_dim=12, layers=3,
+                 propalpha=0.05, tanhalpha=3, layer_norm_affline=True):
+        super().__init__()
+        self.gcn_true = gcn_true
+        self.buildA_true = build_a_true
+        self.num_nodes = num_nodes
+        self.dropout = dropout
+        self.predefined_A = predefined_A
+        self.filter_convs = nn.ModuleList()
+        self.gate_convs = nn.ModuleList()
+        self.residual_convs = nn.ModuleList()
+        self.skip_convs = nn.ModuleList()
+        self.gconv1 = nn.ModuleList()
+        self.gconv2 = nn.ModuleList()
+        self.norm = nn.ModuleList()
+        self.start_conv = nn.Conv2d(in_channels=in_dim,
+                                    out_channels=residual_channels,
+                                    kernel_size=(1, 1))
+        self.gc = _MTGNNGraphConstructor(num_nodes, subgraph_size, node_dim,
+                                         alpha=tanhalpha,
+                                         static_feat=static_feat)
+
+        self.seq_length = seq_length
+        kernel_size = 7
+        if dilation_exponential > 1:
+            self.receptive_field = int(
+                1 + (kernel_size - 1)
+                * (dilation_exponential ** layers - 1)
+                / (dilation_exponential - 1))
+        else:
+            self.receptive_field = layers * (kernel_size - 1) + 1
+
+        for i in range(1):
+            if dilation_exponential > 1:
+                rf_size_i = int(1 + i * (kernel_size - 1)
+                                * (dilation_exponential ** layers - 1)
+                                / (dilation_exponential - 1))
+            else:
+                rf_size_i = i * layers * (kernel_size - 1) + 1
+            new_dilation = 1
+            for j in range(1, layers + 1):
+                if dilation_exponential > 1:
+                    rf_size_j = int(rf_size_i + (kernel_size - 1)
+                                    * (dilation_exponential ** j - 1)
+                                    / (dilation_exponential - 1))
+                else:
+                    rf_size_j = rf_size_i + j * (kernel_size - 1)
+
+                self.filter_convs.append(_MTGNNDilatedInception(
+                    residual_channels, conv_channels,
+                    dilation_factor=new_dilation))
+                self.gate_convs.append(_MTGNNDilatedInception(
+                    residual_channels, conv_channels,
+                    dilation_factor=new_dilation))
+                self.residual_convs.append(nn.Conv2d(
+                    in_channels=conv_channels,
+                    out_channels=residual_channels, kernel_size=(1, 1)))
+                if self.seq_length > self.receptive_field:
+                    self.skip_convs.append(nn.Conv2d(
+                        in_channels=conv_channels, out_channels=skip_channels,
+                        kernel_size=(1, self.seq_length - rf_size_j + 1)))
+                else:
+                    self.skip_convs.append(nn.Conv2d(
+                        in_channels=conv_channels, out_channels=skip_channels,
+                        kernel_size=(1, self.receptive_field - rf_size_j + 1)))
+
+                if self.gcn_true:
+                    self.gconv1.append(_MTGNNMixProp(
+                        conv_channels, residual_channels, gcn_depth, dropout,
+                        propalpha))
+                    self.gconv2.append(_MTGNNMixProp(
+                        conv_channels, residual_channels, gcn_depth, dropout,
+                        propalpha))
+
+                if self.seq_length > self.receptive_field:
+                    self.norm.append(_MTGNNLayerNorm(
+                        (residual_channels, num_nodes,
+                         self.seq_length - rf_size_j + 1),
+                        elementwise_affine=layer_norm_affline))
+                else:
+                    self.norm.append(_MTGNNLayerNorm(
+                        (residual_channels, num_nodes,
+                         self.receptive_field - rf_size_j + 1),
+                        elementwise_affine=layer_norm_affline))
+
+                new_dilation *= dilation_exponential
+
+        self.layers = layers
+        self.end_conv_1 = nn.Conv2d(in_channels=skip_channels,
+                                    out_channels=end_channels,
+                                    kernel_size=(1, 1), bias=True)
+        self.end_conv_2 = nn.Conv2d(in_channels=end_channels,
+                                    out_channels=out_dim,
+                                    kernel_size=(1, 1), bias=True)
+        if self.seq_length > self.receptive_field:
+            self.skip0 = nn.Conv2d(in_channels=in_dim,
+                                   out_channels=skip_channels,
+                                   kernel_size=(1, self.seq_length), bias=True)
+            self.skipE = nn.Conv2d(
+                in_channels=residual_channels, out_channels=skip_channels,
+                kernel_size=(1, self.seq_length - self.receptive_field + 1),
+                bias=True)
+        else:
+            self.skip0 = nn.Conv2d(in_channels=in_dim,
+                                   out_channels=skip_channels,
+                                   kernel_size=(1, self.receptive_field),
+                                   bias=True)
+            self.skipE = nn.Conv2d(in_channels=residual_channels,
+                                   out_channels=skip_channels,
+                                   kernel_size=(1, 1), bias=True)
+
+        self.register_buffer("idx", torch.arange(self.num_nodes))
+
+    def forward(self, input, idx=None):
+        seq_len = input.size(3)
+        assert seq_len == self.seq_length, \
+            "input sequence length not equal to preset sequence length"
+
+        if self.seq_length < self.receptive_field:
+            input = nn.functional.pad(
+                input, (self.receptive_field - self.seq_length, 0, 0, 0))
+
+        if self.gcn_true:
+            if self.buildA_true:
+                adp = self.gc(self.idx if idx is None else idx)
+            else:
+                adp = self.predefined_A
+
+        x = self.start_conv(input)
+        skip = self.skip0(F.dropout(input, self.dropout,
+                                    training=self.training))
+        for i in range(self.layers):
+            residual = x
+            filter_ = torch.tanh(self.filter_convs[i](x))
+            gate = torch.sigmoid(self.gate_convs[i](x))
+            x = filter_ * gate
+            x = F.dropout(x, self.dropout, training=self.training)
+            s = self.skip_convs[i](x)
+            skip = s + skip
+            if self.gcn_true:
+                x = (self.gconv1[i](x, adp)
+                     + self.gconv2[i](x, adp.transpose(1, 0)))
+            else:
+                x = self.residual_convs[i](x)
+
+            x = x + residual[:, :, :, -x.size(3):]
+            x = self.norm[i](x, self.idx if idx is None else idx)
+
+        skip = self.skipE(x) + skip
+        x = F.relu(skip)
+        x = F.relu(self.end_conv_1(x))
+        x = self.end_conv_2(x)
+        return x
+
+
+class MTGNNBaseline(TorchBaseline):
+    """Faithful reproduction of MTGNN (Wu, Pan, Long, Jiang, Chang & Zhang,
+    "Connecting the Dots: Multivariate Time Series Forecasting with Graph
+    Neural Networks", KDD 2020), ported from the authors' official
+    implementation at https://github.com/nnzhan/MTGNN (`layer.py`, `net.py`).
+
+    Unlike `SimpleMTGNN` (kept alongside this class as a deliberately
+    lower-capacity graph-learning baseline), this class implements all four of
+    MTGNN's actual components:
+
+      * **Saturated top-k graph learning** (`_MTGNNGraphConstructor`):
+        anti-symmetric bilinear score over two linearly-mapped node-embedding
+        tables, saturated twice by `tanh(alpha * .)` with `alpha = tanhalpha`,
+        then hard row-wise top-k sparsification -- not `SimpleMTGNN`'s dense
+        `softmax(relu(E1 E2^T))`.
+      * **Mix-hop propagation** (`_MTGNNMixProp`): `gcn_depth` propagation
+        steps with retain ratio `propalpha`, concatenating every intermediate
+        hop and mixing them with a 1x1 conv; applied twice per layer, once on
+        the adjacency and once on its transpose (in/out-flow).
+      * **Dilated-inception temporal convolution**
+        (`_MTGNNDilatedInception`): four parallel dilated convs with kernel
+        sizes {2, 3, 6, 7} concatenated, used in a gated filter/gate pair --
+        not `SimpleMTGNN`'s two plain single-kernel dilated convs.
+      * **Output skip connections**: a `skip0` projection of the raw input
+        plus a per-layer `skip_conv`, summed with a final `skipE`, feeding the
+        two end convolutions; plus per-layer residual connections and MTGNN's
+        node-indexed LayerNorm.
+
+    Adaptations for this project (everything else is the official default):
+
+      * `in_dim=1` (this project supplies a single price channel per variable;
+        MTGNN's traffic setup uses 2: value + time-of-day).
+      * `out_dim=len(horizons)` and the copper node (variable index 0) is read
+        off the output, so one model emits all 4 horizons, matching the
+        `TorchBaseline` multi-horizon convention used by every other baseline
+        here. MTGNN's own multi-step setting is structurally identical
+        (`out_dim = seq_out_len`).
+      * `seq_length=lookback` (60 here vs. the repo's 12). Receptive field is
+        `layers * 6 + 1 = 19 < 60`, so the `seq_length > receptive_field`
+        branch of the official code is the one exercised, as intended.
+      * `subgraph_size` (top-k) is clamped to `min(20, num_vars - 1)` because
+        the official default of 20 exceeds this project's node count and
+        `topk` would raise. Fidelity caveat: with N=16 and k=15, top-k
+        sparsification is close to vacuous here regardless of the clamp --
+        MTGNN's sparsification matters at its original N=207/N=137 scale.
+
+    Architectural hyperparameters are NOT taken from this project's config
+    (`hidden_dim`, `dropout`, ...) precisely so the reproduction claim holds:
+    `gcn_depth=2`, `node_dim=40`, `dropout=0.3`, `conv_channels=32`,
+    `residual_channels=32`, `skip_channels=64`, `end_channels=128`,
+    `layers=3`, `dilation_exponential=1`, `propalpha=0.05`, `tanhalpha=3` are
+    the repo's own values (`net.py` signature defaults; `gcn_depth` from
+    `train_multi_step.py`'s argparse default). Only `num_vars`, `lookback`,
+    `horizons` and `device` come from config. Override any of them explicitly
+    via config keys prefixed `mtgnn_` if an ablation needs to.
+
+    Scope of the reproduction claim: this is an *architecturally* faithful
+    reproduction, trained under this project's common baseline protocol
+    (`TorchBaseline.fit`: Adam, lr 1e-3, weight decay 1e-5, gradient clipping
+    at 1.0, shared early stopping) rather than MTGNN's own training script,
+    which additionally uses curriculum learning over the output horizon and
+    node subsampling (`num_split`). The shared loop is deliberate -- every
+    baseline in this paper must be trained and evaluated identically -- but
+    end-to-end fidelity is not claimed, only architectural fidelity.
+
+    Known non-determinism (ported deliberately, not a bug): the official
+    graph constructor adds uniform jitter inside its top-k selection in both
+    train and eval mode, so `predict()` is mildly stochastic.
+    """
+
+    def __init__(self, config: dict):
+        super().__init__(config)
+        nv = int(config["num_vars"])
+        lookback = int(config.get("lookback", 60))
+        g = config.get  # official defaults below; `mtgnn_`-prefixed overrides
+
+        self.num_vars = nv
+        self.net = _MTGNNNet(
+            gcn_true=True,
+            build_a_true=True,
+            gcn_depth=int(g("mtgnn_gcn_depth", 2)),
+            num_nodes=nv,
+            dropout=float(g("mtgnn_dropout", 0.3)),
+            subgraph_size=min(int(g("mtgnn_subgraph_size", 20)),
+                              max(nv - 1, 1)),
+            node_dim=int(g("mtgnn_node_dim", 40)),
+            dilation_exponential=int(g("mtgnn_dilation_exponential", 1)),
+            conv_channels=int(g("mtgnn_conv_channels", 32)),
+            residual_channels=int(g("mtgnn_residual_channels", 32)),
+            skip_channels=int(g("mtgnn_skip_channels", 64)),
+            end_channels=int(g("mtgnn_end_channels", 128)),
+            seq_length=lookback,
+            in_dim=1,
+            out_dim=len(self.horizons),
+            layers=int(g("mtgnn_layers", 3)),
+            propalpha=float(g("mtgnn_propalpha", 0.05)),
+            tanhalpha=float(g("mtgnn_tanhalpha", 3)),
+        )
+
+    def _forward_flat(self, x):
+        # x: (B, T, N) -> MTGNN expects (B, in_dim, N, T)
+        inp = x.permute(0, 2, 1).unsqueeze(1)          # (B, 1, N, T)
+        out = self.net(inp)                            # (B, H, N, 1)
+        return out[:, :, 0, 0]                         # copper node -> (B, H)
 
 
 class GNNTransformer(TorchBaseline):
