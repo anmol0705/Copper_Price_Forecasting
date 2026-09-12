@@ -1010,33 +1010,44 @@ def run_ablation_studies(config: dict, data: Dict) -> Dict:
     # This flag must be set before VMDMFGNNTrainer(...) is constructed
     # (trainer.py's optimizer param-group setup reads it at construction
     # time, not at .fit() time), so it's set on `config` immediately before
-    # run_variant and restored immediately after -- ablation variants run
-    # sequentially, never concurrently, so this mutate/restore is safe.
+    # run_variant and restored immediately after inside a try/finally --
+    # ablation variants run sequentially, never concurrently, so there is no
+    # CONCURRENCY hazard, but an unguarded restore is still an EXCEPTION
+    # hazard: if run_variant raises partway through (OOM, a NaN loss, a Drive
+    # sync error -- all real risks over an unattended multi-hour run) and the
+    # notebook/caller is later resumed in the same process without a full
+    # restart, the flag would otherwise be left stuck at True and silently
+    # affect every later step reusing this same `config` object. try/finally
+    # closes that gap (found by review, not merely theoretical).
     logger.info("Ablation: full_model_graphfix")
     set_seed(seed)
     _no_decay_saved = config["training"].get("no_decay_graph_embeddings", False)
     config["training"]["no_decay_graph_embeddings"] = True
-    graphfix_model = make_vmd_mfgnn(num_modes, "learned",
-                                     normalize_graph_embeddings_=True)
-    run_variant("full_model_graphfix", graphfix_model,
-                data["train_loader"], data["val_loader"], data["test_loader"])
-    config["training"]["no_decay_graph_embeddings"] = _no_decay_saved
+    try:
+        graphfix_model = make_vmd_mfgnn(num_modes, "learned",
+                                         normalize_graph_embeddings_=True)
+        run_variant("full_model_graphfix", graphfix_model,
+                    data["train_loader"], data["val_loader"], data["test_loader"])
+    finally:
+        config["training"]["no_decay_graph_embeddings"] = _no_decay_saved
 
     # (f) full_model_graphfix_temp: (e) plus a learnable per-band softmax
     # temperature, tau=exp(log_temperature) -- PLAN.md Sec 3b.2's "best
     # available fix", simulated this session to survive weight decay where a
     # raw nn.Parameter temperature would not. log_temperature is caught by
     # the same no_decay_graph_embeddings name-matcher as emb1/emb2, so it
-    # reuses the same config flag as (e).
+    # reuses the same config flag as (e). Same try/finally reasoning as (e).
     logger.info("Ablation: full_model_graphfix_temp")
     set_seed(seed)
     config["training"]["no_decay_graph_embeddings"] = True
-    graphfix_temp_model = make_vmd_mfgnn(num_modes, "learned",
-                                          normalize_graph_embeddings_=True,
-                                          use_graph_temperature_=True)
-    run_variant("full_model_graphfix_temp", graphfix_temp_model,
-                data["train_loader"], data["val_loader"], data["test_loader"])
-    config["training"]["no_decay_graph_embeddings"] = _no_decay_saved
+    try:
+        graphfix_temp_model = make_vmd_mfgnn(num_modes, "learned",
+                                              normalize_graph_embeddings_=True,
+                                              use_graph_temperature_=True)
+        run_variant("full_model_graphfix_temp", graphfix_temp_model,
+                    data["train_loader"], data["val_loader"], data["test_loader"])
+    finally:
+        config["training"]["no_decay_graph_embeddings"] = _no_decay_saved
 
     save_results(ablation_results, "results/ablation_results.json")
     return ablation_results

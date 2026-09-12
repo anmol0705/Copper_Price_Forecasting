@@ -6,22 +6,28 @@ data:
   val_end: "2021-12-31"
   # test: 2022-01-01 to end
 
-  # Current scope is 16 variables: the 12 Yahoo Finance tickers below plus 4
+  # Current scope is 15 variables: the 11 Yahoo Finance tickers below plus 4
   # FRED-sourced series (baa10y, dfii10 daily; ppiaco, indpro monthly and
   # point-in-time joined with a publication lag). The FRED series are NOT listed
   # here because they are not yfinance tickers -- they are pulled by
   # DataDownloader._download_fred_extensions() via src/fred_utils.py. See
-  # paper1/PLAN.md Section 1 for the N=8 -> N=16 expansion and per-variable
+  # paper1/PLAN.md Section 1 for the N=8 -> N=15 expansion and per-variable
   # verification; this supersedes the previously locked 8-variable,
   # Yahoo-Finance-only scope in docs/archive/vmd-mfgnn-protocol-SKILL.md.
   # This block must match src/data_pipeline.py's TICKERS exactly (nothing in
-  # src/ currently reads it -- TICKERS is the single source of truth).
+  # src/ currently reads it -- TICKERS is the single source of truth; this
+  # block is documentation only, kept in sync manually). It previously listed
+  # a stale 12-ticker/N=16 version including aluminum, which src/data_pipeline.py
+  # removed this session (real Yahoo Finance history starts 2014-05-06, not
+  # 2010 -- see TICKERS' own comment there for the full reason) -- corrected
+  # here to match, since a stale copy here risks being copy-pasted into the
+  # paper's variable table despite the code already having moved on.
   # NOTE (2026-08-07, retained as history): zinc/nickel dropped -- their NASDAQ
   # sub-index proxies (^NQCIZNER / ^NQCINIER) are confirmed dead/delisted on
   # Yahoo Finance as of a live production run.
   tickers:
     copper: "HG=F"
-    aluminum: "ALI=F"
+    # aluminum: "ALI=F" -- REMOVED, see src/data_pipeline.py's TICKERS comment.
     gold: "GC=F"
     oil: "CL=F"
     dxy: "DX-Y.NYB"
