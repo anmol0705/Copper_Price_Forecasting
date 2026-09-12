@@ -35,6 +35,7 @@ class TorchBaseline(nn.Module):
                                      weight_decay=self.config.get("weight_decay", 1e-5))
         epochs = self.config.get("epochs", 100)
         patience = self.config.get("patience", 20)
+        min_epochs = self.config.get("min_epochs", 0)
         best_loss = float("inf")
         wait = 0
         best_state = None
@@ -54,11 +55,18 @@ class TorchBaseline(nn.Module):
 
             if val_loader:
                 val_loss = self._evaluate(val_loader)
-                if val_loss < best_loss:
+                # min_epochs floor mirrors VMDMFGNNTrainer.fit (trainer.py):
+                # best-checkpoint selection AND early-stopping patience are both
+                # gated on the same floor, so a baseline can't win on an
+                # under-trained epoch-0-ish checkpoint the way VMD-MFGNN's fix
+                # already guards against (see trainer.py comment above
+                # best_eligible_val_mse). Without this, the 7 baseline models
+                # were the only main-table entries not honoring the floor.
+                if (epoch + 1) >= min_epochs and val_loss < best_loss:
                     best_loss = val_loss
                     wait = 0
                     best_state = {k: v.cpu().clone() for k, v in self.state_dict().items()}
-                else:
+                elif (epoch + 1) >= min_epochs:
                     wait += 1
                     if wait >= patience:
                         break

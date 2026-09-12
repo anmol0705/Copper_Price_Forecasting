@@ -586,6 +586,7 @@ def run_all_experiments(config: dict, data: Dict):
         "lr": config["training"]["learning_rate"],
         "weight_decay": 1e-5,
         "patience": config["training"]["patience"],
+        "min_epochs": config["training"].get("min_epochs", 0),
         "device": device,
     }
 
