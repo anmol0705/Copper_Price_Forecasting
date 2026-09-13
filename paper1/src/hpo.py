@@ -188,18 +188,39 @@ def run_hpo(config: dict, data: Dict, n_trials: int = 15, trial_epochs: int = 25
         )
         trainer = VMDMFGNNTrainer(model, trial_config)
 
-        best_val_mse = float("inf")
-        for epoch in range(trial_epochs):
-            trainer.train_epoch(train_loader)
-            val_results = trainer.evaluate(val_loader)
-            val_mse = val_results["avg_mse"]
-            best_val_mse = min(best_val_mse, val_mse)
+        try:
+            best_val_mse = float("inf")
+            for epoch in range(trial_epochs):
+                trainer.train_epoch(train_loader)
+                val_results = trainer.evaluate(val_loader)
+                val_mse = val_results["avg_mse"]
+                best_val_mse = min(best_val_mse, val_mse)
 
-            trial.report(val_mse, epoch)
-            if trial.should_prune():
-                raise optuna.TrialPruned()
+                trial.report(val_mse, epoch)
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
 
-        return best_val_mse
+            return best_val_mse
+        finally:
+            # Explicit cleanup, always run (success, prune, or a real
+            # exception e.g. a CUDA OOM from a sibling trial's memory
+            # pressure) -- added after a real CUDA OOM at n_jobs=4 on this
+            # project's actual run. PyTorch's CUDA caching allocator does
+            # NOT return freed memory to the driver on its own; it keeps
+            # freed blocks in its own pool for reuse WITHIN this process.
+            # Under n_jobs>1, several trials' pools interleave on one
+            # device, and a finished trial's blocks are only reusable by a
+            # DIFFERENT trial if they're the right size/shape -- otherwise
+            # they sit reserved-but-idle, compounding across trials as
+            # fragmentation. Deleting the trial's model/optimizer/trainer
+            # references and calling empty_cache() here returns genuinely
+            # free memory to the driver immediately after every trial
+            # (pass or fail), rather than only whenever Python's GC happens
+            # to collect them and only ever accumulating within the
+            # allocator's internal pool.
+            del model, trainer
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     sampler = TPESampler(seed=seed)
     pruner = MedianPruner()

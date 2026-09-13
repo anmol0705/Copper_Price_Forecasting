@@ -163,13 +163,20 @@ hpo:
   # Number of Optuna trials to run CONCURRENTLY (a thread pool within one
   # process, not multiprocessing) -- see src/hpo.py's run_hpo docstring for
   # the full reasoning and the per-trial-DataLoader / per-trial-seed / Drive-
-  # sync-lock changes that make n_jobs>1 safe. 4 chosen from a real observed
-  # measurement this session: a single trial used ~2.3GB on a 16GB Colab T4,
-  # so 4 concurrent trials (~9.2GB) leaves comfortable headroom for CUDA
-  # context overhead and the larger hidden_dim=128 trials in the search
-  # space, without needing to watch memory live. Real speedup is sub-linear
-  # (concurrent trials share one CUDA default stream per device, so this
-  # mainly overlaps each trial's CPU/data-loading overhead rather than
-  # parallelizing GPU compute itself) but meaningful at this project's model
-  # scale, where per-epoch time is overhead-dominated, not GPU-compute-bound.
-  n_jobs: 4
+  # sync-lock changes that make n_jobs>1 safe.
+  #
+  # REVISED 4 -> 2 after a real CUDA OOM at n_jobs=4 on the actual overnight
+  # Colab run. The ~2.3GB/trial figure this was originally sized from was a
+  # single observed data point, not a worst-case bound -- it understated the
+  # real per-trial footprint for at least two reasons: (1) it likely reflected
+  # a small-hidden_dim trial, not the search space's hidden_dim=128 upper end,
+  # and multiple concurrent trials CAN simultaneously sample large hidden_dim
+  # (nothing coordinates Optuna's per-trial sampling to avoid this); (2)
+  # PyTorch's CUDA caching allocator does not release memory back to the
+  # driver between trials within one process, so per-trial footprints do not
+  # simply sum and reset -- fragmentation and retained-but-unused blocks from
+  # earlier-finished trials compound. 2 concurrent trials is the safer,
+  # still-nonzero-speedup choice; if this OOMs again, drop to n_jobs: 1
+  # (fully sequential, the original, longest-verified-safe behavior) rather
+  # than tuning this number further blind.
+  n_jobs: 2
