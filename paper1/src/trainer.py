@@ -429,6 +429,27 @@ class VMDMFGNNTrainer:
                         logger.info(f"Resuming from checkpoint {checkpoint_path}: "
                                     f"training previously completed, skipping "
                                     f"training entirely.")
+                        # self.final_epoch/self.final_state are normally only
+                        # set at the end of a real training loop (see below,
+                        # near "self.final_epoch = last_epoch") -- this
+                        # early-return path skips that loop entirely, so
+                        # without this, any caller reading trainer.final_epoch
+                        # after a resume-from-completed-checkpoint (e.g.
+                        # run_ablation_studies, and the notebook's mirrored
+                        # run_variant) hits AttributeError. Found live on a
+                        # real overnight run: full_model's ablation checkpoint
+                        # had genuinely finished before a Colab disconnect,
+                        # and resuming into it crashed the very next line.
+                        # The checkpoint dict already stores the real epoch
+                        # count from the original run ("epoch": last_epoch,
+                        # written at the completed=True save below) -- reuse
+                        # it rather than leaving final_epoch merely
+                        # unset-but-tolerated. Legacy bare-state-dict
+                        # checkpoints (pre-dating this flag, "completed=True"
+                        # implied) have no such field -- None in that case is
+                        # correct, honest missing-data, not a guess.
+                        self.final_epoch = loaded.get("epoch") if isinstance(loaded, dict) else None
+                        self.final_state = {k: v.cpu().clone() for k, v in state.items()}
                         return {"train_loss": [], "val_metrics": [],
                                 "resumed_from_checkpoint": str(checkpoint_path)}
                     else:
