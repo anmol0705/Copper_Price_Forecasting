@@ -220,6 +220,30 @@ class DataDownloader:
                     )
                     df.loc[bad_date, "clp"] = interpolated
 
+        # A second, independently verified bad tick in the same series: CLP=X
+        # reads 5.46 on 2014-04-10 against a ~545.8/~544.4 neighborhood on the
+        # immediately adjacent trading days -- the same ~100x decimal-scale
+        # error as the 2016-12-22 tick above, not a real FX move. Handled with
+        # the identical narrow, explicit, linearly-interpolated correction
+        # rather than folding it into a general multi-date loop, per this
+        # file's philosophy of one verified correction per known-bad date.
+        if "clp" in df.columns:
+            bad_date_2 = pd.Timestamp("2014-04-10")
+            if bad_date_2 in df.index:
+                before = df.loc[:bad_date_2, "clp"].iloc[:-1].last_valid_index()
+                after = df.loc[bad_date_2:, "clp"].iloc[1:].first_valid_index()
+                if before is not None and after is not None:
+                    v_before, v_after = df.loc[before, "clp"], df.loc[after, "clp"]
+                    frac = (bad_date_2 - before).days / (after - before).days
+                    interpolated = v_before + frac * (v_after - v_before)
+                    logger.warning(
+                        f"  clp (CLP=X): correcting verified bad tick on "
+                        f"{bad_date_2.date()} ({df.loc[bad_date_2, 'clp']:.4f} -> "
+                        f"{interpolated:.4f}, linearly interpolated between "
+                        f"{before.date()}={v_before:.4f} and {after.date()}={v_after:.4f})"
+                    )
+                    df.loc[bad_date_2, "clp"] = interpolated
+
         df = df.ffill(limit=5).dropna()
         df.index.name = "date"
 
