@@ -66,15 +66,26 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     mask = ~(np.isnan(y_true) | np.isnan(y_pred))
     y_true, y_pred = y_true[mask], y_pred[mask]
     if len(y_true) == 0:
-        return {"rmse": np.nan, "mae": np.nan, "mape": np.nan, "r2": np.nan, "da": np.nan}
+        return {"rmse": np.nan, "mae": np.nan, "mape": np.nan, "smape": np.nan, "r2": np.nan, "da": np.nan}
 
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
     nonzero = np.abs(y_true) > 1e-8
     mape = np.mean(np.abs((y_true[nonzero] - y_pred[nonzero]) / y_true[nonzero])) * 100 if nonzero.any() else np.nan
+    # SMAPE: bounded [0, 200], symmetric in y_true/y_pred. Reported alongside
+    # MAPE because MAPE is unstable on this data (return series near zero
+    # blow MAPE toward infinity, hence the nonzero mask above) -- SMAPE's
+    # denominator uses |y_true| + |y_pred| instead of |y_true| alone, so it
+    # does not diverge the same way. Guard the 0/0 case (both y_true and
+    # y_pred exactly zero) the same way MAPE guards its own division-by-zero,
+    # by excluding those points from the mean.
+    denom = np.abs(y_true) + np.abs(y_pred)
+    smape_nonzero = denom > 1e-8
+    smape = (np.mean(200 * np.abs(y_true[smape_nonzero] - y_pred[smape_nonzero]) / denom[smape_nonzero])
+             if smape_nonzero.any() else np.nan)
     r2 = r2_score(y_true, y_pred)
     da = np.mean(np.sign(y_true) == np.sign(y_pred)) * 100
-    return {"rmse": rmse, "mae": mae, "mape": mape, "r2": r2, "da": da}
+    return {"rmse": rmse, "mae": mae, "mape": mape, "smape": smape, "r2": r2, "da": da}
 
 
 def diebold_mariano_test(e1: np.ndarray, e2: np.ndarray, horizon: int = 1) -> Dict[str, float]:
