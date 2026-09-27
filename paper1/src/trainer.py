@@ -133,12 +133,43 @@ class VMDMFGNNTrainer:
             # ".weight" (it is a bare nn.Parameter, e.g.
             # "graph_constructors.0.log_temperature"), hence the endswith
             # match rather than a ".x." substring match.
+            # OPT-IN, additive, OFF by default (tc.get(..., False)): also
+            # excludes GATv2Conv's own edge-processing parameters
+            # (lin_edge.weight, att -- both real, confirmed via
+            # GATv2Conv(edge_dim=1).named_parameters()) from decay, on top
+            # of the emb1/emb2/log_temperature group above. Motivated by a
+            # gap found this session: the existing no_decay_graph_embeddings
+            # fix never touched these, so weight decay still acts on the
+            # parameters that turn the learned adjacency into GAT's edge
+            # feature -- a candidate (not confirmed) explanation for
+            # sec:graphfix's still-unexplained "gradient into emb1/emb2
+            # decays to exactly 0.0 even with decay already removed from
+            # emb1/emb2 themselves" finding. Kept as a SEPARATE flag from
+            # no_decay_graph_embeddings, not folded into it, so existing
+            # graphfix/graphfix_temp results (already reported in main.tex)
+            # stay exactly reproducible under the original flag; this is a
+            # new, distinct experiment to run, not a silent behavior change.
+            # A quick checkpoint check (no retraining) found lin_edge/att do
+            # NOT show emb1/emb2's collapse signature (both stay at a
+            # normal ~1e-4 to 1.7e-1 RMS in both a collapsed and a
+            # decay-fixed checkpoint, versus emb1's 8-orders-of-magnitude
+            # collapse) -- real counter-evidence the hypothesis is weaker
+            # than it first looked, not proof it's wrong. Still cheap to
+            # test for real: try it before ruling it out.
+            also_no_decay_gat_edge = tc.get("no_decay_gat_edge_params", False)
             no_decay_params, decay_params = [], []
             for name, param in model.named_parameters():
                 if not param.requires_grad:
                     continue
-                if (".emb1." in name or ".emb2." in name
-                        or name.split(".")[-1] == "log_temperature"):
+                is_embedding_group = (
+                    ".emb1." in name or ".emb2." in name
+                    or name.split(".")[-1] == "log_temperature"
+                )
+                is_gat_edge_group = (
+                    also_no_decay_gat_edge
+                    and (".lin_edge." in name or name.split(".")[-1] == "att")
+                )
+                if is_embedding_group or is_gat_edge_group:
                     no_decay_params.append(param)
                 else:
                     decay_params.append(param)
