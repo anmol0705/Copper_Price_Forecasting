@@ -1,208 +1,135 @@
-VMD-MFGNN v2 — Outstanding TODOs
-=================================
+VMD-MFGNN (Paper 1) — Outstanding TODOs
+=========================================
+Last full rewrite: 2026-09-27. Everything below is either genuinely open or
+newly added from this session's real findings. Anything resolved has been
+removed — check git log / PLAN.md for history if you need it.
 
-0. [RESOLVED, 2026-08-10] The reframe described here happened, and has since
-   been through a full experimental follow-up cycle: confound-check ->
-   graph-fix experiment -> constant-forecast-artifact retraction -> all
-   integrated into paper/main.tex. See STATUS.md "Graph-Fix Experiment: Final
-   Analysis" and "Final Review Pass" sections for the complete history.
-   Superseded by item 1 below, which is also now resolved.
+Current state, one line: dataset expanded to N=15 and fully retrained,
+GATv2 swapped in, multi-horizon architecture changed to shared-graph +
+per-horizon LSTM, results/ablation/collapse sections in main.tex all
+rewritten with real numbers. The core finding (graph collapses, adds no
+value) survived the batching-bug fix and is now measured more precisely.
 
-1. [RESOLVED, 2026-08-10] The tuned confound-check ran (results/confound_check_
-   tuned.json), was independently re-verified (the apparent per-band DA
-   "reversal" turned out to be a constant-forecast/base-rate-identity artifact,
-   not real skill — see STATUS.md), and a further graph-fix experiment
-   (results_v2/) tested whether removing weight decay from + normalizing the
-   graph embeddings would resolve the underlying collapse. It did not resolve
-   the deeper problem (embeddings stay at random-init, gradient too weak to
-   move them either way). All of this has been integrated into paper/main.tex
-   (new sections: "Confound-Check at Tuned Hyperparameters", "Graph-Fix
-   Experiment", "The Constant-Forecast Artifact"). Paper recompiled clean,
-   45 pages, 0 errors.
+---
 
-2. [RESOLVED, 2026-08-10, confirmed by independent follow-up plagiarism review]
-   All 4 citation-attachment issues fixed:
-   - 22.8Mt/China-demand stat now has \citep{IEA2024} attached directly.
-   - "Dr. Copper" claim no longer force-attached to Becerra2022 — paper now
-     explicitly states no verified citation was found for that specific claim
-     rather than attaching a questionable one (more honest than a swap).
-   - Wu2020mtgnn removed from the over-broad "stock prediction" grouping,
-     appears correctly only in its own MTGNN-specific sentence.
-   - "290 citations" now sourced + dated once (not bare-repeated twice).
+1. [OPEN, HIGH VALUE, cheap] Add 1/sqrt(d) scaling to the bilinear
+   adjacency logits before ReLU/softmax. main.tex line ~209 already
+   states this is missing and flags it as relevant to the collapse.
+   Standard scaled-attention practice; nobody has actually tried it yet.
+   File: src/models/vmd_mfgnn.py, FrequencyGraphConstructor. Cheap to
+   test in isolation from every other change.
 
-3. [RESOLVED, 2026-08-10] Peer-review pass complete (see STATUS.md), AI-writing-
-   detector pass complete (see STATUS.md), plagiarism/originality re-check on
-   the expanded paper complete (see STATUS.md "Final Review Pass" — risk
-   DECREASED since the last check despite substantial new content).
+2. [OPEN, MODERATE CONFIDENCE] Try Softplus instead of LeakyReLU in the
+   GATv2 layer. Neumeier et al. (IEEE IV 2023, arXiv:2305.16196)
+   independently found GATv2 gradients vanishing to exactly zero on
+   small, sparse graphs — the same symptom measured directly in this
+   project's own checkpoints (gradient to the graph embeddings hits
+   precisely 0.0 at convergence, main.tex sec:graphfix). One paper, a
+   different domain (automotive), but the mechanism match is real.
 
-4. [RESOLVED, 2026-08-10, confirmed by independent follow-up review]
-   - Conclusion's RQ recap compressed — now explicitly says "we do not
-     re-derive those answers here, only summarize them."
-   - Line ~44's generic stakeholder sentence replaced with copper/EV-specific
-     content.
-   - Repeated disclosure-motif count reduced from ~12-13 to 5 occurrences,
-     now confined to Limitations/Data/HPO sections as recommended. New
-     sections added since then use a different, non-repetitive, correctly
-     cross-referenced retraction vocabulary instead (not a new tic).
+3. [OPEN] Re-test AdamW narrowly. Adam+L2 and AdamW are provably
+   non-equivalent specifically for parameters with small, sparse
+   gradient history — exactly what the graph embeddings are. The
+   earlier "AdamW = no difference" finding this project used may not
+   have isolated this specific low-gradient-history effect. Measure the
+   embedding parameters' effective decay magnitude directly, not just
+   final accuracy, before trusting the old conclusion either way.
 
-5. [FLAGGED, LOW URGENCY, still open] sync_to_drive()/restore_from_drive()'s
-   file-size-based staleness detection is unreliable for same-shaped .npy
-   arrays (root cause of the VMD-MFGNN prediction-file staleness incident,
-   already resolved manually each time it occurred). Not yet fixed at the
-   source in notebooks/vmd_mfgnn_v2_colab.ipynb — worth a proper fix (content
-   hash or mtime-based check) before relying on Drive sync for any future
-   rerun, but not blocking anything right now since no more Colab runs are
-   currently planned.
+4. [OPEN] Search weight_decay itself via HPO instead of only the
+   binary graphfix on/off. The whole collapse story traces to
+   weight_decay=1e-5 applied uniformly. HPO already has code support
+   for searching weight_decay (search_weight_decay=True in
+   src/hpo.py) but the real reported run never used it. A log-uniform
+   search over e.g. 1e-6 to 1e-3 could find a middle ground — enough
+   decay to regularize, not enough to erase the graph — without needing
+   the full graphfix intervention (which is known to hurt accuracy).
 
-6. [OPEN] Full peer-review pass on the final, complete paper (with confound-
-   check/graph-fix/constant-forecast/algorithm sections all integrated) is
-   in progress as of this file's last update — see STATUS.md for live status
-   and, once landed, the final publication-readiness verdict.
+5. [OPEN] Isolate what's actually causing graphfix/graphfix_temp to
+   underperform. The fix (unit-normalize embeddings + exclude from
+   weight decay) genuinely stops the collapse — real, non-uniform
+   structure confirmed directly in the trained weights — but both
+   variants score worse than the collapsed full_model. Two changes are
+   bundled together; nobody has tested them separately. Run two more
+   ablation variants: normalization alone (decay still on), and
+   no-decay alone (no normalization), to find out which change is
+   responsible, or whether it's neither and the real cause is something
+   else (e.g. these variants being undertrained relative to their
+   different parameterization).
 
-7. [OPEN, HUMAN-ONLY, from earlier publisher review, not yet actioned] Real
-   author names/affiliations/ORCID, repository URL, \journal{} line, arXiv
-   account + endorsement check (first-time submitters may need one, 3-7 day
-   latency, start early), abstract character-limit compliance for the CURRENT
-   (much-expanded) draft — recheck this now that the paper has grown
-   substantially since the length was last verified.
+6. [OPEN] Re-run the exact-zero-gradient diagnostic on the NEW N=15
+   graphfix variants. The "gradient decays to exactly 0.0 independent
+   of weight decay" finding (main.tex sec:graphfix, an unexplained
+   second collapse mechanism) is from the OLDER N=8-era graph-fix
+   experiment, not yet re-measured on full_model_graphfix /
+   full_model_graphfix_temp from this session's real N=15 run. Confirm
+   it still holds before leaning on it for anything further.
 
-8. [OPEN, FUTURE WORK, not blocking current paper] Expand paper1's N=8
-   feature set to test whether the isotropic-collapse finding is an
-   artifact of a too-narrow/low-signal feature set rather than (or in
-   addition to) the weight-decay/gradient mechanism diagnosed in the paper.
-   Motivated by a real reviewer risk: with only 8 market-price proxies and
-   no copper-demand fundamentals, a reviewer could argue the negative
-   result (RQ0 no-model-beats-naive, and the per-band graph never learning
-   differentiated structure) is a lack-of-signal-in-the-inputs problem, not
-   a property of the architecture. Paper1's own current 8 variables are all
-   liquid daily market-price series (copper, aluminum, gold, oil, DXY,
-   S&P 500, VIX, US10Y) — see QNA_LOG.md's first Phase-1 entry for the full
-   reasoning. paper2/docs/research_plan_CP1.md's planned feature blocks are
-   the natural template for what to add: macro-financial (FRED real yields
-   DFII10, credit spreads BAMLH0A0HYM2, China PMI), carry/term-structure,
-   and volatility/regime (GARCH-family, HAR-RV components) blocks. Concrete
-   next step, when picked up: extend N beyond 8 with a subset of these,
-   re-verify leakage-safety on the new sources (paper2's plan already
-   requires a causal-leakage unit test for every new feature block — reuse
-   that check), and re-run the collapse diagnostic (Section V of paper1) at
-   the larger N to see whether the collapse persists. Not started; this is
-   a real experiment, not a paper1 text edit — would need its own Colab run
-   and is a meaningfully larger scope change than anything else in this
-   TODO list.
+7. [OPEN, BIGGER SCOPE] Try Gumbel-softmax / L0-regularized structure
+   learning instead of discrete top-k sparsification. Builds sparsity
+   into the training objective directly, rather than masking a softmax
+   after the fact — a structurally different mechanism than what's been
+   tried so far. Most of the literature behind this is tested at
+   hundreds/thousands of nodes, not N=15 — a real hypothesis, not a
+   proven transfer. Bigger lift than items 1-6; do those first.
 
-9. [OPEN, HIGH PRIORITY per author -- flagged as a potential direct-
-   rejection risk, not yet implemented, author is still reviewing before
-   batching all changes] Two related architectural gaps found during Q&A
-   review, both around `GATConv` usage in `src/models/vmd_mfgnn.py`
-   (`FrequencyBandModule.__init__`, line ~137):
+8. [OPEN, MULTI-SEED VALIDATION NEEDED] Several of this session's real
+   findings are single-run and need replication before being treated as
+   stable: the null-control experiment's h=5/h=10 DM significance
+   (real input scoring worse than shuffled/noise input), and the HPO
+   winner's ~12% edge over the trial cluster (could be seed luck, zero
+   replication currently). Re-run the null-control experiment and HPO
+   at 3-5 seeds each before citing either result as settled.
 
-   (a) GAT vs GATv2. Currently uses PyTorch Geometric's `GATConv`
-   (original GAT, Velickovic 2018), not `GATv2Conv`. GATv2 (Brody/Alon/
-   Yahav, ICLR 2022, arXiv:2105.14491) fixes a proven "static attention"
-   limitation in original GAT (attention-score ranking across a node's
-   neighbors is provably query-independent) and is a same-cost drop-in
-   replacement that strictly dominates GAT across the original paper's
-   11 benchmarks. main.tex never discusses or justifies choosing GAT over
-   GATv2 anywhere -- a credible reviewer is very likely to ask this.
-   Author's decision: swap to GATv2Conv (not just add as an ablation
-   option) once ready to batch changes.
+9. [OPEN, HOUSEKEEPING] HPO's orphaned trial. 11 trials recorded (8
+   complete, 2 pruned, 1 stuck in RUNNING state, never resolved —
+   likely a Colab disconnect mid-trial). HPO was configured for up to
+   15 trials; only 10-11 actually completed. Either re-run to reach a
+   clean 15, or explicitly accept 10 usable trials as final and say so
+   plainly (already disclosed in Limitations, but the search itself
+   was never actually completed to its configured budget).
 
-   (b) The learned per-band adjacency does two jobs that aren't equally
-   defensible: (i) topology/sparsification via top-k=4-of-8 -- NOT
-   redundant with GAT, since vanilla GAT can't hard-drop edges on its
-   own; and (ii) supplying its scalar value as GAT's `edge_dim=1` edge
-   feature (`edge_attr` in `FrequencyBandModule.forward`, line ~171-172)
-   -- genuinely questionable, since GAT computes its OWN attention
-   coefficient from node features + that edge feature jointly, meaning
-   two separate parameterizations (upstream bilinear embeddings, GAT's
-   internal attention) both capable of expressing edge importance. If
-   GAT's own attention is expressive enough alone, the model has a cheap
-   path to good task performance that never requires the upstream
-   adjacency to become informative -- a plausible ARCHITECTURAL
-   contributor to the isotropic-collapse finding (Section V), not just
-   an unlucky optimization dynamic. Checked: this codebase never extracts
-   GAT's own internal attention weights via PyG's
-   `return_attention_weights=True` to test this directly -- every
-   existing diagnostic measures only the upstream adjacency.
-   Author's decision: build TWO separate model variants to test this
-   directly, not just add a diagnostic --
-     - variant with the learned edge weight passed to GAT as `edge_attr`
-       (the current design, kept as-is for comparison)
-     - variant WITHOUT it: adjacency still determines topology (top-k
-       mask decides which edges exist), but `GATConv` is NOT given
-       `edge_dim`/`edge_attr` at all -- GAT computes attention purely
-       from node features under the fixed sparsified topology.
-   Concrete next steps when picked up: (1) swap `GATConv` -> `GATv2Conv`
-   in `FrequencyBandModule.__init__`; (2) add a config flag (e.g.
-   `use_edge_weight: bool`) to `FrequencyBandModule`/`VMDMFGNN` that
-   conditionally constructs the GAT layer with/without `edge_dim=1` and
-   conditionally passes `edge_attr` in `forward`; (3) also extract and
-   log GAT's own `return_attention_weights=True` output as a new
-   diagnostic in `src/diagnostics.py`, to directly check whether GAT's
-   internal attention differentiates even when the upstream adjacency is
-   uniform; (4) add both new variants to the ablation study
-   (`run_ablation_studies` in `src/trainer.py`) or a dedicated new
-   experiment function; (5) real Colab re-run required, cannot be tested
-   without GPU training. Not started -- author is reviewing the rest of
-   the project first before batching this with any other changes.
-   See QNA_LOG.md's "GAT vs GATv2 / redundant edge weight" entry for the
-   full reasoning this was flagged from.
+10. [OPEN, PAPER TEXT] sec:confound-tuned and sec:econ (Economic
+    Significance) still report the original N=8 configuration and were
+    never re-run at N=15 — currently disclosed with an honest staleness
+    caveat rather than fabricated numbers. Re-running these at N=15
+    would close the gap properly; otherwise they stay as explicitly-
+    flagged historical evidence.
 
-10. [OPEN, tracked per author decision, not yet implemented] Loss function
-    for return series: MSE (default) and MAE are both point-estimate
-    losses targeting the conditional mean; daily commodity returns are
-    heavy-tailed and heteroskedastic (volatility clustering), which
-    neither loss accounts for. Untested alternative: a distributional
-    loss (Gaussian or Student-t negative log-likelihood with a learned,
-    time-varying variance) or a quantile/pinball loss, more principled
-    for return series specifically than a point-estimate loss. Note this
-    is DISTINCT from "is MSE what's causing the collapse/negative
-    result" -- that question is already answered (no): the loss
-    comparison robustness experiment (Section V-F of paper1, `trainer.py`
-    `_LOSS_FNS`) already shows the collapse is loss-invariant across MSE
-    and MAE (the Huber arm accidentally behaved identically to MSE the
-    whole run and doesn't count as a third distinct test, honestly
-    disclosed in the paper). This item is about whether a better-suited
-    loss could improve the MODEL's actual forecasting quality, not about
-    the collapse mechanism. Concrete next step when picked up: implement
-    a heteroskedastic-Gaussian-NLL or pinball-loss option in
-    `trainer.py`'s `_LOSS_FNS` (needs a second output head for
-    predicted variance/quantiles, since current heads only output a
-    point estimate), and compare against the existing MSE/MAE results.
-    Real experiment, needs a Colab re-run. See QNA_LOG.md's "MSE loss /
-    multi-horizon combining" entry for the full reasoning.
+11. [OPEN, NEEDS A FRESH PASS] Full peer-review pass on the current
+    paper. The last full peer-review pass predates this session's
+    complete rewrite of Results/DM/Ablation/HPO/Section V (real N=15
+    numbers, the flagship model's own degeneracy now foregrounded as a
+    headline finding, 8 baselines instead of 6). Needs re-review against
+    the current text, not the version that was reviewed before.
 
-11. [OPEN, tracked per author decision, not yet implemented] Multi-horizon
-    architecture and loss combination, two related gaps found together:
-    (a) The model is NOT one deep network per horizon -- confirmed in
-    `src/models/vmd_mfgnn.py:258-265`: 4 separate but tiny 2-layer MLP
-    heads (`Linear->ReLU->Dropout->Linear`), one per horizon, sharing the
-    ENTIRE upstream pipeline (VMD -> per-band graph -> GAT -> LSTM ->
-    attention fusion -- effectively all parameters). This is the "MIMO"/
-    joint multi-task strategy in the multi-horizon forecasting literature
-    (vs. "Direct" = fully separate models per horizon, "Recursive" =
-    iterate a one-step model); MIMO's known trade-off is sample
-    efficiency/positive transfer at the cost of predictor flexibility --
-    plausible that a 1-day (noise-dominated) and 22-day (trend-dominated)
-    signal need different representations that one shared backbone can't
-    serve equally well.
-    (b) The training loss (`src/trainer.py:197-198`) sums per-horizon MSE
-    UNWEIGHTED, no normalization. Using paper1's own naive-baseline row
-    (Table IV, true-return std by horizon: 0.0179/0.0399/0.0552/0.0759
-    for h=1/5/10/22), variance at h=22 is ~18x larger than at h=1, so the
-    h=22 loss term dominates the combined gradient by roughly that same
-    factor purely from scale, before any skill difference -- the shared
-    backbone is implicitly trained to prioritize the long horizon over
-    the short one. Real, quantifiable, currently undisclosed anywhere in
-    paper1.
-    Concrete next steps when picked up: (1) try per-horizon loss
-    weighting/normalization (e.g. divide each horizon's loss term by that
-    horizon's target variance, estimated from the training split) as the
-    cheap fix for (b) alone; (2) as a more substantial architectural
-    change for (a), consider giving each horizon head more capacity
-    (deeper MLP, or a horizon-specific final LSTM/attention layer instead
-    of only the final 2-layer MLP) or testing a "Direct" strategy variant
-    (separate backbones per horizon) as a comparison point against the
-    current MIMO design. Real experiment, needs a Colab re-run. See
-    QNA_LOG.md's "MSE loss / multi-horizon combining" entry for the full
-    reasoning.
+12. [OPEN, HUMAN-ONLY, unresolved from earlier] Real author
+    names/affiliations/ORCID, repository URL, \journal{} line, an arXiv
+    account + endorsement check if submitting there (3-7 day latency for
+    first-time submitters — start early), and a fresh abstract
+    character-limit check now that the paper has grown/changed since it
+    was last verified.
+
+13. [WORTH CONSIDERING, BIGGER SCOPE, NOT A FIX] Reframe the prediction
+    target as volatility instead of price-level return. RQ0 already
+    shows nothing beats a naive price forecast on this data. A related-
+    lab crude-oil paper (same broad research area) found HAR/GARCH beats
+    deep learning on daily realized volatility specifically — a real,
+    citable precedent that volatility may be a more forecastable target
+    than returns for this asset class. This does not fix the graph
+    collapse finding; it's a separate question about whether the whole
+    task is framed at a point where deep learning has a real shot.
+
+---
+
+Already tested, not worth revisiting (kept here so nobody re-does this):
+- VMD's fixed K=5 was swept across K in {3,5,7,9} in the robustness suite
+  — no effect on accuracy or on the collapse finding. Real, disclosed
+  limitation (K was never HPO-tuned), but not a live lever — already
+  checked and ruled out as a fix.
+- Lion/Sophia optimizers — no literature found tying either to this
+  specific embedding-collapse-under-decay failure mode. Not worth
+  prioritizing without a real reason.
+- The null-control experiment's recorded checkpoint_path strings looking
+  inconsistent in the Copper_Paper1.2 results mirror — traced and
+  confirmed NOT a code bug, just an artifact of how Drive-sync mirrors
+  strip a path prefix. No fix needed.
