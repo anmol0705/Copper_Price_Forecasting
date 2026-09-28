@@ -60,13 +60,24 @@ class EarlyStopper:
         return self.counter >= self.patience
 
 
-def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray,
+                     mase_denom: Optional[float] = None) -> Dict[str, float]:
+    """mase_denom: optional pre-computed scaling denominator for MASE (Hyndman
+    & Koehler, 2006) -- the in-sample MAE of a one-step-ahead naive/persistence
+    forecast on the TRAINING split, for this target's horizon. When omitted
+    (the default), "mase" is NOT added to the returned dict, so every existing
+    call site is unchanged unless it opts in. See compute_mase_denominator()
+    for how to produce this value; it must come from the training split only
+    (never test/val -- it is a scaling constant, not a test-set quantity)."""
     y_true = np.asarray(y_true).flatten()
     y_pred = np.asarray(y_pred).flatten()
     mask = ~(np.isnan(y_true) | np.isnan(y_pred))
     y_true, y_pred = y_true[mask], y_pred[mask]
     if len(y_true) == 0:
-        return {"rmse": np.nan, "mae": np.nan, "mape": np.nan, "smape": np.nan, "r2": np.nan, "da": np.nan}
+        out = {"rmse": np.nan, "mae": np.nan, "mape": np.nan, "smape": np.nan, "r2": np.nan, "da": np.nan}
+        if mase_denom is not None:
+            out["mase"] = np.nan
+        return out
 
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
@@ -85,7 +96,52 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
              if smape_nonzero.any() else np.nan)
     r2 = r2_score(y_true, y_pred)
     da = np.mean(np.sign(y_true) == np.sign(y_pred)) * 100
-    return {"rmse": rmse, "mae": mae, "mape": mape, "smape": smape, "r2": r2, "da": da}
+    out = {"rmse": rmse, "mae": mae, "mape": mape, "smape": smape, "r2": r2, "da": da}
+    # MASE (Hyndman & Koehler, 2006): scale-free ratio of this model's MAE to
+    # the in-sample MAE of a naive one-step-ahead persistence forecast on the
+    # TRAINING split (mase_denom). <1.0 beats that naive benchmark; >1.0 is
+    # worse than it. Only added when the caller opts in via mase_denom, so
+    # every pre-existing call site (which does not pass it) is unaffected.
+    if mase_denom is not None:
+        out["mase"] = mae / mase_denom if mase_denom > 1e-12 else np.nan
+    return out
+
+
+def compute_mase_denominator(train_targets: np.ndarray, lag: int = 1) -> float:
+    """In-sample MAE of a one-step-ahead naive/persistence forecast on a
+    TRAINING-split target series, i.e. mean(|y_t - y_{t-lag}|) over
+    non-overlapping-appropriate, non-NaN training-split values -- the
+    scale-free denominator MASE divides by (Hyndman & Koehler, 2006,
+    "Another look at measures of forecast accuracy", IJF 22(4):679-688).
+    `train_targets` must already be restricted to the training split only (no
+    val/test leakage) and given in their natural time order (e.g. the
+    per-horizon forward-return target series CopperDataset/RawPriceDataset
+    build, sliced to the training indices, at their original daily spacing --
+    i.e. NOT pre-subsampled to one point per horizon window).
+
+    `lag` MUST equal the forecast horizon h when `train_targets` is a series
+    of h-day-ahead forward log returns sampled at every day (the usual case
+    here). This is because such a series is a *daily* rolling window over the
+    same underlying h-day return, so adjacent daily entries overlap by h-1
+    days: r_h(t) - r_h(t-1) telescopes to r_1(t+h-1) - r_1(t-1), a difference
+    of two ordinary 1-day returns that does NOT scale with h and is thus not
+    a meaningful "one step ahead in the h-day-return series" comparison.
+    Using lag=h instead compares each h-day return to the h-day return of the
+    immediately preceding, non-overlapping h-day window (the genuine "no
+    change from the previous period" persistence forecast for that series),
+    and its magnitude grows correctly with horizon. The default lag=1 is only
+    correct for h=1 target series (or any series that is not built from
+    overlapping windows), where lag=1 IS the previous period.
+
+    The naive/persistence forecast this scales against ("no change from the
+    previous period") is distinct from this project's zero-forecast baseline
+    (which predicts a return of exactly zero).
+    """
+    train_targets = np.asarray(train_targets).flatten()
+    train_targets = train_targets[~np.isnan(train_targets)]
+    if len(train_targets) <= lag:
+        return np.nan
+    return float(np.mean(np.abs(train_targets[lag:] - train_targets[:-lag])))
 
 
 def diebold_mariano_test(e1: np.ndarray, e2: np.ndarray, horizon: int = 1) -> Dict[str, float]:
