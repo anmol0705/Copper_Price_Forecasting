@@ -147,7 +147,7 @@ training:
 # behavior is unchanged unless a human explicitly opts in.
 hpo:
   enabled: true
-  n_trials: 10
+  n_trials: 15
   trial_epochs: 25
   # OFF by default (False = unchanged, already-verified 4-parameter search
   # space: hidden_dim/num_heads/learning_rate/dropout/num_gnn_layers). When
